@@ -77,7 +77,27 @@ export default class GameArea extends React.Component {
             {nodes}
             {this.renderActionButton()}
             {this.renderSetModePanel()}
+            {this.renderGMActions()}
             {this.renderUploadInput()}
+        </div>;
+    }
+
+    renderGMActions() {
+        const { playerID, moves } = this.props;
+        if (playerID !== '-1') {
+            return undefined;
+        }
+        return <div className='gm-actions'>
+            <button
+                className='gm-reset'
+                onClick={() => {
+                    if (window.confirm('确认清空房间、重新开局？\n将清空所有手牌与弃牌、重新洗牌、体力回满（保留玩家图片与体力上限）。')) {
+                        moves.gmReset();
+                    }
+                }}
+            >
+                {'清空房间（重新开局）'}
+            </button>
         </div>;
     }
 
@@ -196,34 +216,48 @@ export default class GameArea extends React.Component {
             >
                 {'+'}
             </button>);
-            nodes.push(<button
-                key='hp-max-minus'
-                className='positioned hp-btn'
+            // 自行输入体力上限（D&D 等大数值），回车或点“设定”生效
+            nodes.push(<input
+                key='hp-max-input'
+                ref={el => this.hpMaxInput = el}
+                className='positioned hp-max-input'
+                type="number"
+                min="1"
+                defaultValue={health.max}
+                onKeyPress={e => {
+                    if (e.nativeEvent.key === 'Enter') {
+                        this.setMaxHealthFromInput();
+                    }
+                }}
                 style={{
                     left: playerArea.x + INFO_DELTA + 2 * (btnWidth + INFO_DELTA),
                     top: rowTop,
-                    width: btnWidth * 1.3,
+                    width: btnWidth * 1.8,
                     height: btnHeight,
                     fontSize: scaledHeight * 0.04,
                 }}
-                onClick={() => moves.updateMaxHealth(-1)}
-            >
-                {'上限-'}
-            </button>);
+            />);
             nodes.push(<button
-                key='hp-max-plus'
+                key='hp-max-set'
                 className='positioned hp-btn'
                 style={{
-                    left: playerArea.x + INFO_DELTA + 2 * (btnWidth + INFO_DELTA) + btnWidth * 1.3 + INFO_DELTA,
+                    left: playerArea.x + INFO_DELTA + 2 * (btnWidth + INFO_DELTA) + btnWidth * 1.8 + INFO_DELTA,
                     top: rowTop,
-                    width: btnWidth * 1.3,
+                    width: btnWidth * 1.2,
                     height: btnHeight,
                     fontSize: scaledHeight * 0.04,
                 }}
-                onClick={() => moves.updateMaxHealth(1)}
+                onClick={() => this.setMaxHealthFromInput()}
             >
-                {'上限+'}
+                {'设定'}
             </button>);
+        }
+    }
+
+    setMaxHealthFromInput() {
+        const input = this.hpMaxInput;
+        if (input) {
+            this.props.moves.setMaxHealth(input.value);
         }
     }
 

@@ -67,19 +67,37 @@ function updateHealth(G, ctx, change) {
     }
 }
 
-function updateMaxHealth(G, ctx, change) {
+// 玩家自行输入体力上限（D&D 等大数值），设定后视为满血
+function setMaxHealth(G, ctx, value) {
     const { healths } = G;
     const { playerID } = ctx;
-    healths[playerID].max += change;
-    if (healths[playerID].max < 1) {
-        healths[playerID].max = 1;
+    const num = parseInt(value, 10);
+    if (!isFinite(num)) {
+        return;
     }
-    if (healths[playerID].max > 10) {
-        healths[playerID].max = 10;
-    }
-    if (healths[playerID].current > healths[playerID].max) {
-        healths[playerID].current = healths[playerID].max;
-    }
+    const max = Math.max(1, Math.min(9999, num));
+    healths[playerID].max = max;
+    healths[playerID].current = max;
+}
+
+// GM 专属：一键清空房间、重新开局（保留玩家上传的图片与体力上限）
+function gmReset(G, ctx) {
+    const { playerImages, healths } = G;
+    const fresh = setup(ctx);
+    fresh.playerImages = playerImages;
+    const { playOrder } = ctx;
+    playOrder.forEach(player => {
+        const prev = healths[player];
+        const max = prev && prev.max > 0 ? prev.max : fresh.healths[player].max;
+        fresh.healths[player].max = max;
+        fresh.healths[player].current = max;
+    });
+    G.deck = fresh.deck;
+    G.discard = fresh.discard;
+    G.hands = fresh.hands;
+    G.healths = fresh.healths;
+    G.playerImages = playerImages;
+    playOrder.forEach(player => drawCards(G, ctx, player, 4));
 }
 
 // 上传玩家自己的图片（dataURL 存入游戏状态，所有玩家与 GM 可见）
@@ -147,8 +165,8 @@ export const SanGuoSha = {
                 order: turnOrder,
                 onBegin: (_G, ctx) => {
                     const { events } = ctx;
-                    // 自由模式：所有玩家都可以随时出牌
-                    events.setActivePlayers({ all: 'play' });
+                    // 自由模式：所有玩家都可以随时出牌；GM（旁观者 -1）进入专属 gm 阶段，只能执行 GM 操作
+                    events.setActivePlayers({ all: 'play', value: { '-1': 'gm' } });
                 },
                 stages: {
                     play: {
@@ -159,13 +177,16 @@ export const SanGuoSha = {
                             dismantle,
                             steal,
                             setImage,
+                            setMaxHealth,
                             updateHealth,
-                            updateMaxHealth,
                             endPlay,
                         },
                     },
                     discard: {
-                        moves: { pickUp, discardCard, finishDiscard, setImage },
+                        moves: { pickUp, discardCard, finishDiscard, setImage, setMaxHealth },
+                    },
+                    gm: {
+                        moves: { gmReset },
                     },
                 },
             },

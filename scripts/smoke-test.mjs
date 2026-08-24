@@ -86,6 +86,17 @@ c0.moves.updateHealth(-1);
 const st0d = await waitForState(c0, st => st.G.healths['0'].current === 2);
 check('体力变为 2/3', st0d.G.healths['0'].current === 2);
 
+console.log('== 6b. 玩家 0 自行输入体力上限（D&D HP） ==');
+c0.moves.setMaxHealth(50);
+const st0e = await waitForState(c0, st => st.G.healths['0'].max === 50);
+check('体力上限设为 50 且回满', st0e.G.healths['0'].max === 50 && st0e.G.healths['0'].current === 50, st0e.G.healths['0']);
+c0.moves.setMaxHealth(0);
+const st0f = await waitForState(c0, st => st.G.healths['0'].max === 1);
+check('非法输入（0）被钳制为 1', st0f.G.healths['0'].max === 1 && st0f.G.healths['0'].current === 1, st0f.G.healths['0']);
+c0.moves.setMaxHealth(50);
+await waitForState(c0, st => st.G.healths['0'].max === 50);
+check('恢复上限为 50', c0.getState().G.healths['0'].max === 50, c0.getState().G.healths['0']);
+
 console.log('== 7. GM（旁观者 -1）连接，应看到所有玩家手牌 ==');
 const cgm = Client({
     game: SanGuoSha,
@@ -144,6 +155,27 @@ const p0hand2 = st2.G.hands['0'].length;
 c2.moves.dismantle({ playerID: '0', index: 0 });
 const st2b = await waitForState(c2, st => st.G.hands['0'].length === p0hand2 - 1);
 check('玩家0手牌 -1（被拆）', st2b.G.hands['0'].length === p0hand2 - 1);
+
+console.log('== 11. 普通玩家不能调用 GM 清空 ==');
+// 先等玩家1客户端同步完第10步（过河拆桥后玩家0手牌应为 3），再测试
+await waitForState(c1, st => st.G.hands['0'].length === 3);
+const handBefore11 = c1.getState().G.hands['0'].length;
+c1.moves.gmReset();
+await sleep(600);
+const stNoReset = c1.getState();
+check('玩家调用 gmReset 无效（手牌不变）', stNoReset.G.hands['0'].length === handBefore11, { before: handBefore11, after: stNoReset.G.hands['0'].length });
+
+console.log('== 12. GM 一键清空房间（重新开局） ==');
+cgm.moves.gmReset();
+const stReset = await waitForState(cgm, st => st.G.hands['0'].length === 4);
+check('清空后每人重新发 4 张', stReset.G.hands['0'].length === 4 && stReset.G.hands['4'].length === 4, [0, 4].map(i => stReset.G.hands[i.toString()].length));
+check('清空后弃牌堆为空', stReset.G.discard.length === 0, stReset.G.discard.length);
+check('清空后牌堆 = 160 - 20', stReset.G.deck.length === 140, stReset.G.deck.length);
+check('清空后体力回满且保留上限（玩家0=50，其余=3）',
+    stReset.G.healths['0'].current === 50 && stReset.G.healths['0'].max === 50
+    && stReset.G.healths['1'].current === 3 && stReset.G.healths['1'].max === 3,
+    stReset.G.healths);
+check('清空后保留玩家图片', stReset.G.playerImages['0'] === 'data:image/jpeg;base64,Zm9vYmFy');
 
 c0.stop();
 cgm.stop();
