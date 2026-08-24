@@ -25,9 +25,10 @@ export default class SanGuoShaLobby extends React.Component {
     constructor(props) {
         super(props);
         this.lobbyClient = new LobbyClient({ server: SERVER });
-        const matchInfoRaw = window.localStorage.getItem(MATCH_INFO_KEY);
+        // 用 sessionStorage：身份按“标签页”隔离，多开窗口可各用各的玩家身份
+        const matchInfoRaw = window.sessionStorage.getItem(MATCH_INFO_KEY);
         this.state = {
-            name: window.localStorage.getItem(NAME_KEY),
+            name: window.sessionStorage.getItem(NAME_KEY),
             matchInfo: matchInfoRaw ? JSON.parse(matchInfoRaw) : undefined, // { matchID, playerID, credentials }
             match: undefined, // the singleton room
             inGame: false,
@@ -64,7 +65,7 @@ export default class SanGuoShaLobby extends React.Component {
                     return;
                 }
                 // 房间已不存在，清除本地记录
-                window.localStorage.removeItem(MATCH_INFO_KEY);
+                window.sessionStorage.removeItem(MATCH_INFO_KEY);
                 this.setState({ matchInfo: undefined });
             } catch (e) {
                 // 服务器暂不可达，继续轮询
@@ -73,8 +74,11 @@ export default class SanGuoShaLobby extends React.Component {
 
         try {
             const { matches } = await this.lobbyClient.listMatches(SanGuoSha.name);
-            // 找到（或创建）唯一的房间
-            let match = matches.find(m => m.setupData && m.setupData.singleton && !m.gameover);
+            // 找到（或创建）唯一的房间；若因多窗口同时建房出现多个，统一取最老的一个
+            const candidates = matches
+                .filter(m => m.setupData && m.setupData.singleton && !m.gameover)
+                .sort((a, b) => a.createdAt - b.createdAt);
+            let match = candidates[0];
             if (match === undefined) {
                 const { matchID } = await this.lobbyClient.createMatch(SanGuoSha.name, {
                     numPlayers: NUM_PLAYERS,
@@ -120,7 +124,9 @@ export default class SanGuoShaLobby extends React.Component {
     }
 
     resetName = () => {
-        window.localStorage.removeItem(NAME_KEY);
+        window.sessionStorage.removeItem(NAME_KEY);
+        // 同时退出当前身份，以便换名字/换座位（多窗口各用各的身份）
+        this.leaveMatch();
         this.setState({ name: null });
     }
 
@@ -207,16 +213,15 @@ export default class SanGuoShaLobby extends React.Component {
 
     joinAsGM = () => {
         const { match } = this.state;
-        this.setState({
-            matchInfo: { matchID: match.matchID, playerID: GM_PLAYER_ID },
-            inGame: true,
-        });
+        const matchInfo = { matchID: match.matchID, playerID: GM_PLAYER_ID };
+        window.sessionStorage.setItem(MATCH_INFO_KEY, JSON.stringify(matchInfo));
+        this.setState({ matchInfo, inGame: true });
     }
 
     setName = () => {
         const name = document.getElementById(INPUT_NAME_ID).value;
         this.setState({ name });
-        window.localStorage.setItem(NAME_KEY, name);
+        window.sessionStorage.setItem(NAME_KEY, name);
     }
 
     joinMatch = async (matchID, playerID) => {
@@ -234,14 +239,14 @@ export default class SanGuoShaLobby extends React.Component {
             playerID,
             credentials: playerCredentials,
         };
-        window.localStorage.setItem(MATCH_INFO_KEY, JSON.stringify(matchInfo));
+        window.sessionStorage.setItem(MATCH_INFO_KEY, JSON.stringify(matchInfo));
         this.setState({ matchInfo });
     }
 
     leaveMatch = async () => {
         const { matchInfo } = this.state;
         this.setState({ matchInfo: undefined, inGame: false });
-        window.localStorage.removeItem(MATCH_INFO_KEY);
+        window.sessionStorage.removeItem(MATCH_INFO_KEY);
         if (matchInfo === undefined || matchInfo.credentials === undefined) {
             return;
         }
