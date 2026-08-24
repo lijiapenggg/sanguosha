@@ -14,7 +14,8 @@ const server = Server({
     db,
     authenticateCredentials: () => true,
 });
-const PORT = process.env.PORT;
+// 端口：优先用平台注入的 $PORT（Zeabur/Render 等），本地默认 8098
+const PORT = process.env.PORT || 8098;
 
 // Build path relative to the server.js file
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

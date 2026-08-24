@@ -1,0 +1,5 @@
+{
+  "$schema": "https://raw.githubusercontent.com/zeabur/zbpack/main/schema/zbpack.json",
+  "build_command": "NODE_OPTIONS=--openssl-legacy-provider npm run build",
+  "start_command": "npm run server"
+}
