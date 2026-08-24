@@ -10,7 +10,8 @@ const SERVER = process.env.REACT_APP_PROXY || document.location.toString().repla
 const NAME_KEY = 'name';
 const MATCH_INFO_KEY = 'matchInfo';
 const INPUT_NAME_ID = 'name-input';
-const EXPANSIONS = ['wind', 'fire', 'wood', 'knight11', 'hill', 'sp11', 'knight12'];
+const NUM_PLAYERS = 5;
+const GM_PLAYER_ID = '-1';
 
 const SanGuoShaClient = Client({
     game: SanGuoSha,
@@ -24,88 +25,95 @@ export default class SanGuoShaLobby extends React.Component {
     constructor(props) {
         super(props);
         this.lobbyClient = new LobbyClient({ server: SERVER });
-        const matchInfo = window.localStorage.getItem(MATCH_INFO_KEY);
+        const matchInfoRaw = window.localStorage.getItem(MATCH_INFO_KEY);
         this.state = {
             name: window.localStorage.getItem(NAME_KEY),
-            matchInfo: matchInfo ? JSON.parse(matchInfo) : undefined, // { matchID, playerID, credentials }
-            matches: [],
+            matchInfo: matchInfoRaw ? JSON.parse(matchInfoRaw) : undefined, // { matchID, playerID, credentials }
+            match: undefined, // the singleton room
             inGame: false,
         };
     }
 
     componentDidMount() {
         // Mobile requires explicit user action to play audio
-        document.querySelector('#lobby-view').addEventListener('click', this.props.playAudio);
+        const lobbyView = document.querySelector('#lobby-view');
+        if (lobbyView) {
+            lobbyView.addEventListener('click', this.props.playAudio);
+        }
         this.refreshLobbyState();
     }
 
     componentWillUnmount() {
-        document.querySelector('#lobby-view').removeEventListener('click', this.props.playAudio);
+        const lobbyView = document.querySelector('#lobby-view');
+        if (lobbyView) {
+            lobbyView.removeEventListener('click', this.props.playAudio);
+        }
+        clearTimeout(this.timeout);
     }
 
     refreshLobbyState = async () => {
         const { matchInfo } = this.state;
-        const { matches } = await this.lobbyClient.listMatches(SanGuoSha.name);
 
+        // 已在一个对局中：确认房间还在，然后直接进入游戏
         if (matchInfo !== undefined) {
-            const { matchID, playerID } = matchInfo;
-
-            const match = matches.find(match => match.matchID === matchID);
-            if (match === undefined) {
+            try {
+                const { matches } = await this.lobbyClient.listMatches(SanGuoSha.name);
+                const match = matches.find(m => m.matchID === matchInfo.matchID && !m.gameover);
+                if (match !== undefined) {
+                    this.setState({ match, inGame: true });
+                    return;
+                }
+                // 房间已不存在，清除本地记录
+                window.localStorage.removeItem(MATCH_INFO_KEY);
                 this.setState({ matchInfo: undefined });
-                await this.leaveMatch();
-                this.refreshLobbyState();
-                return;
-            }
-
-            if (match.setupData.parentMatchID !== undefined) {
-                this.setState({ inGame: true });
-                return;
-            }
-
-            const childMatch = matches.find(match => match.setupData.parentMatchID === matchID);
-            if (childMatch !== undefined) {
-                await this.leaveMatch();
-                await this.joinMatch(childMatch.matchID, playerID);
-                this.refreshLobbyState();
-                return;
+            } catch (e) {
+                // 服务器暂不可达，继续轮询
             }
         }
 
-        this.setState({ matches: [...matches].sort((match1, match2) => match2.createdAt - match1.createdAt) });
+        try {
+            const { matches } = await this.lobbyClient.listMatches(SanGuoSha.name);
+            // 找到（或创建）唯一的房间
+            let match = matches.find(m => m.setupData && m.setupData.singleton && !m.gameover);
+            if (match === undefined) {
+                const { matchID } = await this.lobbyClient.createMatch(SanGuoSha.name, {
+                    numPlayers: NUM_PLAYERS,
+                    setupData: { singleton: true },
+                });
+                match = { matchID, players: [] };
+            }
+            this.setState({ match });
+        } catch (e) {
+            // 服务器未就绪，稍后重试
+        }
+
         clearTimeout(this.timeout);
         this.timeout = setTimeout(this.refreshLobbyState, 1000);
-        return;
     }
 
     render() {
         const { matchInfo, inGame } = this.state;
         if (inGame) {
             const { matchID, playerID, credentials } = matchInfo;
+            const isGM = playerID === GM_PLAYER_ID;
             return <div>
                 <SanGuoShaClient
                     matchID={matchID}
                     playerID={playerID}
                     credentials={credentials}
-                    playAgain={playerID === '-1' ? undefined : () => {
-                        this.setState({ inGame: false });
-                        this.playAgain().then(this.refreshLobbyState);
-                    }}
                 />
+                {isGM && <div className='gm-banner'>{'GM 模式：旁观中，可查看所有玩家手牌'}</div>}
                 <button
                     className="leave-button"
-                    onClick={() => {
-                        this.setState({ inGame: false });
-                        this.leaveMatch().then(this.refreshLobbyState);
-                    }}
+                    onClick={() => this.leaveMatch().then(this.refreshLobbyState)}
                 >
-                    {'Leave'}
+                    {'离开房间'}
                 </button>
             </div>;
         }
         return <div className='lobby'>
             <div className='title'>
-                <img src='./name.png' alt='sanguosha' />
+                <h1>{'跑团卡牌桌'}</h1>
             </div>
             <div id="lobby-view">{this.renderLobby()}</div>
         </div>;
@@ -117,150 +125,98 @@ export default class SanGuoShaLobby extends React.Component {
     }
 
     renderLobby() {
-        const { name, matches } = this.state;
+        const { name, match } = this.state;
         if (name === null || name === undefined) {
             return <div>
-                <p>{'Choose a player name:'}</p>
+                <p>{'输入玩家名字：'}</p>
                 <input
                     id={INPUT_NAME_ID}
                     type="text"
-                    defaultValue="Visitor"
+                    defaultValue="玩家"
                     onKeyPress={e => {
                         if (e.nativeEvent.key === 'Enter') {
                             this.setName();
                         }
                     }}
                 />
-                <button onClick={this.setName}>{'Enter'}</button>
+                <button onClick={this.setName}>{'进入'}</button>
             </div>;
-        } else {
+        }
+        if (match === undefined) {
             return <div>
-                <p>{`Welcome, ${name}`}</p>
-                <button onClick={this.resetName}>Change name</button>
-                {this.maybeRenderCreateButton()}
-                <div id="instances">
-                    <table>
-                        <tbody>
-                            <tr>
-                                <th>{'Creation time'}</th>
-                                <th>{'Players'}</th>
-                                <th>{'Status'}</th>
-                                <th></th>
-                            </tr>
-                            {matches.map(this.renderMatch)}
-                        </tbody>
-                    </table>
-                </div>
+                <p>{`欢迎，${name}`}</p>
+                <button onClick={this.resetName}>{'修改名字'}</button>
+                <p>{'正在连接房间...'}</p>
             </div>;
-        };
+        }
+        return <div>
+            <p>{`欢迎，${name}`}</p>
+            <button onClick={this.resetName}>{'修改名字'}</button>
+            <h3>{'房间（5 名玩家，1 名 GM）'}</h3>
+            {this.renderSeats()}
+            <p>
+                <button onClick={this.joinAsGM}>{'以 GM 身份进入（可查看所有玩家手牌）'}</button>
+            </p>
+        </div>;
     }
 
-    maybeRenderCreateButton() {
-        const { matchInfo } = this.state;
-        if (matchInfo !== undefined) {
-            return;
-        }
-        return <button
-            onClick={() => this.createMatch(SanGuoSha.maxPlayers, undefined)
-                .then(matchID => this.joinMatch(matchID, '0'))
-                .then(this.refreshLobbyState)}
-        >
-            {'Create new room'}
-        </button>;
-    }
-
-    renderMatch = match => {
-        const { name, matchInfo } = this.state;
-        const { createdAt, gameover, matchID, players, setupData } = match;
-        const playerNames = players.map(player => player.name).filter(name => name !== undefined);
-        let status;
-        if (gameover) {
-            status = 'Completed';
-        } else if (setupData.parentMatchID !== undefined) {
-            status = 'In progress';
-        } else if (playerNames.length < SanGuoSha.minPlayers) {
-            status = 'Waiting for more players';
-        } else if (playerNames[0] === name) {
-            status = ['Expansions:', ...EXPANSIONS.map(expansion => <span key={expansion} className='expansion'>
-                <input
-                    type='checkbox'
-                    value={this.state[`expansion-${expansion}`]}
-                    onChange={e => this.setState({ [`expansion-${expansion}`]: e.target.checked })}
-                />
-                {expansion}
-            </span>)];
-        } else {
-            status = 'Waiting for host to start';
-        }
-        const buttons = [];
-        if (matchInfo === undefined || matchInfo.matchID !== matchID) {
-            if (!gameover && players.some(player => player.name === undefined)) {
-                buttons.push(
-                    <button
-                        key="join"
-                        onClick={() => this.leaveMatch()
-                            .then(() => this.joinMatch(matchID, players.find(player => player.name === undefined).id.toString()))
-                            .then(this.refreshLobbyState)}
-                    >
-                        {'Join'}
-                    </button>
-                );
+    renderSeats() {
+        const { matchInfo, match } = this.state;
+        const players = match.players || [];
+        const rows = [];
+        for (let i = 0; i < NUM_PLAYERS; i++) {
+            const player = players[i];
+            const occupied = player !== undefined && player.name !== undefined;
+            const isMe = matchInfo !== undefined && matchInfo.matchID === match.matchID && matchInfo.playerID === i.toString();
+            let button;
+            if (isMe) {
+                button = <button onClick={() => this.setState({ inGame: true })}>{'返回游戏'}</button>;
+            } else if (occupied) {
+                button = <button disabled={true}>{'已满'}</button>;
             } else {
-                buttons.push(
-                    <button
-                        key="watch"
-                        onClick={() => this.leaveMatch()
-                            .then(() => this.setState({ matchInfo: { matchID: matchID, playerID: '-1', }, inGame: true }))}
-                    >
-                        {'Watch'}
-                    </button>
-                );
+                button = <button onClick={() => this.joinSeat(i)}>{'加入'}</button>;
             }
-        } else {
-            if (playerNames[0] === name && playerNames.length >= SanGuoSha.minPlayers) {
-                buttons.push(
-                    <button
-                        key="start"
-                        onClick={() => this.createMatch(playerNames.length, matchID).then(this.refreshLobbyState)}
-                    >
-                        {'Start'}
-                    </button>
-                );
-            }
-            buttons.push(
-                <button key="leave"
-                    onClick={() => this.leaveMatch().then(this.refreshLobbyState)}
-                >
-                    {'Leave'}
-                </button>
+            rows.push(
+                <tr key={i}>
+                    <td>{`座位 ${i + 1}`}</td>
+                    <td>{occupied ? player.name : '空位'}</td>
+                    <td>{button}</td>
+                </tr>
             );
         }
-        return <tr key={matchID}>
-            <td>{new Date(createdAt).toLocaleString()}</td>
-            <td>{playerNames.join(', ')}</td>
-            <td>{status}</td>
-            <td>{buttons}</td>
-        </tr>;
+        return <div id="instances">
+            <table>
+                <tbody>
+                    <tr>
+                        <th>{'座位'}</th>
+                        <th>{'玩家'}</th>
+                        <th></th>
+                    </tr>
+                    {rows}
+                </tbody>
+            </table>
+        </div>;
+    }
+
+    joinSeat = async (playerID) => {
+        const { match } = this.state;
+        await this.joinMatch(match.matchID, playerID.toString());
+        this.setState({ inGame: true });
+        this.refreshLobbyState();
+    }
+
+    joinAsGM = () => {
+        const { match } = this.state;
+        this.setState({
+            matchInfo: { matchID: match.matchID, playerID: GM_PLAYER_ID },
+            inGame: true,
+        });
     }
 
     setName = () => {
         const name = document.getElementById(INPUT_NAME_ID).value;
         this.setState({ name });
         window.localStorage.setItem(NAME_KEY, name);
-    }
-
-    createMatch = async (numPlayers, parentMatchID) => {
-        const { matchID } = await this.lobbyClient.createMatch(
-            SanGuoSha.name,
-            {
-                numPlayers,
-                setupData: {
-                    parentMatchID,
-                    expansions: EXPANSIONS.filter(expansion => this.state[`expansion-${expansion}`]),
-                },
-            },
-        );
-        return matchID;
     }
 
     joinMatch = async (matchID, playerID) => {
@@ -278,8 +234,8 @@ export default class SanGuoShaLobby extends React.Component {
             playerID,
             credentials: playerCredentials,
         };
-        this.setState({ matchInfo });
         window.localStorage.setItem(MATCH_INFO_KEY, JSON.stringify(matchInfo));
+        this.setState({ matchInfo });
     }
 
     leaveMatch = async () => {
@@ -298,17 +254,5 @@ export default class SanGuoShaLobby extends React.Component {
                 credentials,
             },
         );
-    }
-
-    playAgain = async () => {
-        const { matchInfo: { matchID, playerID, credentials } } = this.state;
-        const { nextMatchID } = await this.lobbyClient.playAgain(SanGuoSha.name, matchID, {
-            playerID,
-            credentials,
-            numPlayers: SanGuoSha.maxPlayers,
-            setupData: {},
-        });
-        await this.leaveMatch();
-        this.joinMatch(nextMatchID, playerID);
     }
 }

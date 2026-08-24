@@ -1,9 +1,7 @@
 /**
  * Initial game setup.
+ * 精简版：只有牌堆、弃牌堆、手牌、体力、玩家上传图片。
  */
-
-import CHARACTERS from './characters.js';
-import { ROLE_DIST, ROLE_DIST_LABELS } from './roles.js';
 
 const CARDS = [
     { value: 'A', suit: 'CLUB', type: 'Crossbow' },
@@ -169,31 +167,7 @@ const CARDS = [
 ];
 
 export default function setup(ctx, setupData) {
-    const { numPlayers, playOrder, random } = ctx;
-    const expansions = (setupData || {}).expansions || [];
-
-    const unshuffledRoles = [];
-    ROLE_DIST_LABELS.forEach((role, i) => {
-        for (let j = 0; j < ROLE_DIST[numPlayers][i]; j++) {
-            unshuffledRoles.push({ name: role });
-        }
-    });
-    const roles = random.Shuffle(unshuffledRoles);
-    for (let i = 0; i < roles.length; i++) {
-        roles[i].id = `role-${i}`;
-    }
-    const startPlayerIndex = roles.findIndex(role => role.name === 'King');
-
-    const allCharacters = CHARACTERS.filter(c => c.expansion === undefined || expansions.includes(c.expansion));
-    const numCharacterChoices = 3 * (numPlayers + 1) <= allCharacters.length ? 3 : 2;
-    const monarchChoices = random.Shuffle(allCharacters.filter(c => c.isMonarch));
-    const normalCharacters = random.Shuffle(allCharacters.filter(c => !monarchChoices.includes(c)));
-    const characterChoices = Object.fromEntries(playOrder.map((player, i) =>
-        [player, normalCharacters.slice(numCharacterChoices * i, numCharacterChoices * (i + 1))]));
-    characterChoices[playOrder[startPlayerIndex]].push(...monarchChoices.slice(0, numCharacterChoices));
-    const characters = {};
-    const healths = {};
-    const isAlive = Object.fromEntries(playOrder.map(player => [player, true]));
+    const { playOrder, random } = ctx;
 
     const unshuffledDeck = CARDS.map(card => { return { ...card } });
     const deck = random.Shuffle(unshuffledDeck);
@@ -203,30 +177,14 @@ export default function setup(ctx, setupData) {
     const discard = [];
 
     const hands = Object.fromEntries(playOrder.map(player => [player, []]));
-    const equipment = Object.fromEntries(playOrder.map(player => [player, {}]));
-    const isChained = {};
-    const isFlipped = {};
-    const harvest = [];
-    const privateZone = [];
-    const selfZone = [];
-    const refusingDeath = [1];
+    const healths = Object.fromEntries(playOrder.map(player => [player, { max: 3, current: 3 }]));
+    const playerImages = Object.fromEntries(playOrder.map(player => [player, undefined]));
 
     return {
-        roles,
-        startPlayerIndex,
-        characterChoices,
-        characters,
-        healths,
-        isAlive,
         deck,
         discard,
         hands,
-        equipment,
-        isChained,
-        isFlipped,
-        harvest,
-        privateZone,
-        selfZone,
-        refusingDeath,
+        healths,
+        playerImages,
     };
 }

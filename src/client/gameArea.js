@@ -1,7 +1,5 @@
 import * as classNames from 'classnames';
 import React from 'react';
-import { BASIC, EQUIPMENT } from '../lib/cardCategories.js';
-import RULES from '../lib/rules.json';
 import SetModePanel from './setModePanel';
 import AnimatedBoard from './animatedBoard';
 import './gameArea.css';
@@ -9,13 +7,10 @@ import './gameArea.css';
 // Standard margin between objects
 const DELTA = 10;
 
-// Number of pixels between info objects inside the character card to the character card's border
+// Number of pixels between info objects inside the player card to the player card's border
 const INFO_DELTA = 4;
 
-// Ratio of ratio card to normal cards
-const ROLE_RATIO = 0.25;
-
-// Ratio of other player hand cards and equipment cards to normal cards
+// Ratio of other player hand cards to normal cards
 const CARD_RATIO = 0.3;
 
 // Ratio of cards in the deck to normal cards
@@ -24,14 +19,16 @@ const DECK_RATIO = 0.5;
 // Ratio of cards in the middle to normal cards
 const MIDDLE_CARD_RATIO = 0.7;
 
+// Uploaded images are downscaled to at most this many pixels on the long side
+const IMAGE_MAX_SIZE = 512;
+
 export default class GameArea extends React.Component {
 
     constructor(props) {
         super(props);
         this.state = {
             mode: SetModePanel.DEFAULT_MODE,
-            selectedIndex: undefined,
-            helpCard: undefined,
+            uploadTarget: undefined,
         };
     }
 
@@ -41,13 +38,11 @@ export default class GameArea extends React.Component {
     }
 
     render() {
-        const { G, ctx, playerID, width, height, playerAreas, scaledWidth, scaledHeight } = this.props;
-        const { mode } = this.state;
-        const { characters } = G;
+        const { ctx, playerID, width, height, playerAreas, scaledWidth, scaledHeight } = this.props;
         const { numPlayers, playOrder } = ctx;
+        const isGM = playerID === '-1';
 
         const characterCards = [];
-        const healthPoints = [];
         const normalCards = [];
         const nodes = [];
 
@@ -55,41 +50,19 @@ export default class GameArea extends React.Component {
         playerAreas.forEach((playerArea, i) => {
             const playerIndex = (myPlayerIndex + i) % numPlayers;
             const player = playOrder[playerIndex];
+            const isMe = player === playerID;
 
-            this.addPlayerName(playerArea, playerIndex, player, nodes);
-            this.addCharacterRole(playerArea, playerIndex, nodes);
-
-            const character = characters[player];
-            this.addCharacterCard(playerArea, character, player, characterCards);
-            if (!character) {
-                return;
-            }
-
-            this.addHealth(playerArea, player, healthPoints, nodes);
-            this.addChain(playerArea, player, nodes);
-            this.addPlayerEquipment(playerArea, player, normalCards);
-            if (player !== playerID) {
-                this.addOtherPlayerHand(playerArea, player, normalCards, nodes);
-                this.addOtherPlayerSelfZoneCards(playerArea, player, normalCards, nodes);
+            this.addPlayerName(playerArea, playerIndex, player, nodes, isGM);
+            this.addPlayerImage(playerArea, player, isMe, characterCards);
+            this.addHealth(playerArea, player, isMe, nodes);
+            if (isGM || !isMe) {
+                this.addOtherPlayerHand(playerArea, player, normalCards, nodes, isGM);
             }
         });
 
-        this.addCharacterChoices(characterCards);
-
         this.addDeck(normalCards);
         this.addMyHand(normalCards);
-
-        // Once cards of some type are found, remaining cards are rendered transparently.
-        // We splice from the beginning so that these transparent cards don't block existing ones.
-        const middleCards = [];
-        if (mode === SetModePanel.SELF_ZONE_MODE) {
-            middleCards.splice(0, 0, ...this.getSelfZoneCards(middleCards.length > 0));
-        } else {
-            middleCards.splice(0, 0, ...this.getPrivateZoneCards(middleCards.length > 0));
-            middleCards.splice(0, 0, ...this.getHarvestCards(middleCards.length > 0));
-            middleCards.splice(0, 0, ...this.getDiscardCards(middleCards.length > 0));
-        }
-        normalCards.push(...middleCards);
+        this.addDiscard(normalCards);
 
         return <div>
             {this.renderMyArea()}
@@ -99,49 +72,19 @@ export default class GameArea extends React.Component {
                 scaledWidth={scaledWidth}
                 scaledHeight={scaledHeight}
                 characterCards={characterCards}
-                healthPoints={healthPoints}
                 normalCards={normalCards}
             />
             {nodes}
             {this.renderActionButton()}
-            {this.renderHelp()}
             {this.renderSetModePanel()}
+            {this.renderUploadInput()}
         </div>;
     }
 
-    addCharacterChoices(characterCards) {
-        const { G, playerID, width, height, scaledWidth, scaledHeight } = this.props;
-        const { mode, selectedIndex } = this.state;
-        const { characterChoices } = G;
-        const choices = characterChoices[playerID];
-        if (this.stage() === 'selectCharacter' && choices !== undefined) {
-            const startX = (width - choices.length * scaledWidth - (choices.length - 1) * DELTA) / 2;
-            choices.forEach((choice, i) => {
-                let onClick;
-                if (mode === SetModePanel.DEFAULT_MODE) {
-                    onClick = () => this.setState({ selectedIndex: i === selectedIndex ? undefined : i });
-                } else if (mode === SetModePanel.HELP_MODE) {
-                    onClick = () => this.setState({ helpCard: { key: choice.name, src: `./characters/${choice.name}.jpg` } });
-                }
-                characterCards.push({
-                    key: `character-${choice.name}`,
-                    name: choice.name,
-                    faceUp: true,
-                    opacity: 1,
-                    left: startX + (scaledWidth + DELTA) * i,
-                    top: (height - scaledHeight) / 2 - (i === selectedIndex ? 20 : 0),
-                    width: scaledWidth,
-                    height: scaledHeight,
-                    onClick,
-                });
-            });
-        }
-    }
-
-    addPlayerName(playerArea, playerIndex, player, nodes) {
+    addPlayerName(playerArea, playerIndex, player, nodes, showAll) {
         const { ctx, playerID, matchData, scaledWidth, scaledHeight } = this.props;
         const { currentPlayer } = ctx;
-        if (matchData !== undefined && player !== playerID) {
+        if (matchData !== undefined && (showAll || player !== playerID)) {
             nodes.push(<div
                 key={`name-${playerIndex}`}
                 className={classNames('positioned player-name', { 'current-player': currentPlayer === player })}
@@ -152,82 +95,46 @@ export default class GameArea extends React.Component {
                     height: scaledHeight * 0.2,
                 }}
             >
-                {matchData[playerIndex].name}
+                {matchData[playerIndex] ? matchData[playerIndex].name : player}
             </div>);
         }
     }
 
-    addCharacterRole(playerArea, playerIndex, nodes) {
+    addPlayerImage(playerArea, player, isMe, characterCards) {
         const { G, scaledWidth, scaledHeight } = this.props;
-        const { roles } = G;
-        const role = roles[playerIndex];
-        const roleName = role.name || 'Role Back';
-        nodes.push(<img
-            key={`role-${role.id}`}
-            className='positioned'
-            src={`./roles/${roleName}.jpg`}
-            alt={roleName}
-            style={{
-                left: playerArea.x + (1 - ROLE_RATIO) * scaledWidth - INFO_DELTA,
-                top: playerArea.y + INFO_DELTA,
-                width: scaledWidth * ROLE_RATIO,
-                height: scaledHeight * ROLE_RATIO,
-            }}
-        />);
-    }
+        const { playerImages } = G;
+        const { mode } = this.state;
+        const image = playerImages[player];
 
-    addCharacterCard(playerArea, character, player, characterCards) {
-        const { G, moves, scaledWidth, scaledHeight } = this.props;
-        const { mode, selectedIndex } = this.state;
-        const { isAlive, isFlipped } = G;
         let onClick = undefined;
-        if (mode === SetModePanel.GIVE_MODE && selectedIndex !== undefined) {
-            onClick = () => {
-                moves.give(selectedIndex, player);
-                this.setState({ mode: SetModePanel.DEFAULT_MODE, selectedIndex: undefined });
-            };
-        } else if (mode === SetModePanel.GIVE_JUDGMENT_MODE) {
-            onClick = () => {
-                moves.play(selectedIndex, player);
-                this.setState({ mode: SetModePanel.DEFAULT_MODE });
-            };
-        } else if (mode === SetModePanel.REVEAL_MODE && selectedIndex !== undefined) {
-            onClick = () => {
-                moves.reveal(selectedIndex, player);
-                this.setState({ mode: SetModePanel.DEFAULT_MODE });
-            };
-        } else if (mode === SetModePanel.FLIP_MODE) {
-            onClick = () => {
-                moves.flipObject(player);
-                this.setState({ mode: SetModePanel.DEFAULT_MODE });
-            };
-        } else if (mode === SetModePanel.HELP_MODE) {
-            onClick = () => this.setState({ helpCard: { key: character.name, src: `./characters/${character.name}.jpg` } });
-        } else if (mode === SetModePanel.COUNTRY_SCENE_MODE && selectedIndex !== undefined) {
-            onClick = () => {
-                moves.play(selectedIndex, player, 'Capture');
-                this.setState({ mode: SetModePanel.DEFAULT_MODE });
-            };
-        } else if (mode === SetModePanel.BLOCKADE_MODE && selectedIndex !== undefined) {
-            onClick = () => {
-                moves.play(selectedIndex, player, 'Starvation');
-                this.setState({ mode: SetModePanel.DEFAULT_MODE });
-            };
-        } else if (mode === SetModePanel.ALLIANCE_MODE) {
-            if (selectedIndex === undefined) {
-                onClick = () => this.setState({ selectedIndex: player });
-            } else {
+        let placeholderText = undefined;
+        if (image === undefined) {
+            placeholderText = isMe ? '点击上传图片' : '未上传';
+            if (isMe && mode === SetModePanel.DEFAULT_MODE) {
                 onClick = () => {
-                    moves.alliance(selectedIndex, player);
-                    this.setState({ mode: SetModePanel.DEFAULT_MODE, selectedIndex: undefined });
+                    this.setState({ uploadTarget: player }, () => {
+                        if (this.fileInput) {
+                            this.fileInput.click();
+                        }
+                    });
                 };
             }
+        } else if (isMe && mode === SetModePanel.DEFAULT_MODE) {
+            // 点击自己的图片可以更换
+            onClick = () => {
+                this.setState({ uploadTarget: player }, () => {
+                    if (this.fileInput) {
+                        this.fileInput.click();
+                    }
+                });
+            };
         }
+
         characterCards.push({
-            key: character ? `character-${character.name}` : `character-back-${player}`,
-            name: character ? character.name : 'Character Back',
-            faceUp: character !== undefined && !isFlipped[player],
-            opacity: isAlive[player] ? 1 : 0.5,
+            key: `image-${player}`,
+            src: image,
+            placeholderText,
+            opacity: 1,
             left: playerArea.x,
             top: playerArea.y,
             width: scaledWidth,
@@ -236,205 +143,102 @@ export default class GameArea extends React.Component {
         });
     }
 
-    addHealth(playerArea, player, healthPoints, nodes) {
-        const { G, moves, playerID, width, height, scaledWidth, scaledHeight } = this.props;
-        const { characters, healths, isAlive, refusingDeath } = G;
+    addHealth(playerArea, player, isMe, nodes) {
+        const { G, moves, scaledWidth, scaledHeight } = this.props;
+        const { healths } = G;
+        const health = healths[player];
+        const labelWidth = scaledWidth * 0.3;
+        const labelHeight = scaledHeight * 0.08;
 
-        const isRefusingDeath = characters[playerID] && characters[playerID].name === 'Zhou Tai' && healths[player].current <= 0;
-        const isDying = isRefusingDeath ? new Set(refusingDeath).size < refusingDeath.length : healths[player].current <= 0;
-
-        for (let i = 0; i < (isRefusingDeath ? refusingDeath.length : healths[player].max); i++) {
-            const color = !isRefusingDeath && i < healths[player].current ? 'green' : 'red';
-            healthPoints.push({
-                key: `health-${player}-${i}-${color}`,
-                color,
-                left: playerArea.x + scaledWidth * (0.23 + i * 0.06),
-                top: playerArea.y + scaledHeight * 0.01,
-                width: scaledWidth * 0.06,
-                height: scaledHeight * 0.05,
-            });
-        }
-
-        if (isAlive[player] && isDying) {
-            const SAVE_ME_WIDTH = 100; // pixels
-            const SAVE_ME_HEIGHT = 25; // pixels
-            nodes.push(<button
-                key='save-me'
-                className='positioned bad'
-                style={{
-                    left: playerArea.x + (scaledWidth - SAVE_ME_WIDTH) / 2,
-                    top: playerArea.y + (scaledHeight - SAVE_ME_HEIGHT) / 2,
-                    width: SAVE_ME_WIDTH,
-                    height: SAVE_ME_HEIGHT,
-                }}
-                disabled={true}
-            >
-                {'Save me!'}
-            </button>);
-        }
-
-        if (player !== playerID) {
-            return;
-        }
-
-        if (!isDying) {
-            nodes.push(<div
-                key='decrease-health'
-                className='positioned image-div selectable decrease-health'
-                style={{
-                    left: playerArea.x + scaledWidth * 0.23,
-                    top: playerArea.y + scaledHeight * 0.1,
-                    width: scaledWidth * 0.12,
-                    height: scaledHeight * 0.1,
-                }}
-                onClick={() => (isRefusingDeath ? moves.refusingDeath : moves.updateHealth)(-1)}
-            />);
-        } else if (isAlive[playerID]) {
-            const DIE_BUTTON_WIDTH = 180;
-            const DIE_BUTTON_HEIGHT = 30;
-            nodes.push(<button
-                key='die'
-                className={`positioned selectable bad`}
-                style={{
-                    left: (width - DIE_BUTTON_WIDTH) / 2,
-                    top: (height - DIE_BUTTON_HEIGHT) / 2,
-                    width: DIE_BUTTON_WIDTH,
-                    height: DIE_BUTTON_HEIGHT,
-                }}
-                onClick={() => moves.die()}
-            >
-                {'Die'}
-            </button>);
-        }
-        if (healths[playerID].current < healths[playerID].max) {
-            nodes.push(<div
-                key='increase-health'
-                className='positioned image-div selectable increase-health'
-                style={{
-                    left: playerArea.x + scaledWidth * 0.39,
-                    top: playerArea.y + scaledHeight * 0.1,
-                    width: scaledWidth * 0.12,
-                    height: scaledHeight * 0.1,
-                }}
-                onClick={() => (isRefusingDeath ? moves.refusingDeath : moves.updateHealth)(+1)}
-            />);
-        }
-
-        if (healths[playerID].max > 1) {
-            nodes.push(<div
-                key='decrease-max-health'
-                className='positioned image-div selectable decrease-max-health'
-                style={{
-                    left: playerArea.x + scaledWidth * 0.265,
-                    top: playerArea.y + scaledHeight * 0.2,
-                    width: scaledWidth * 0.09,
-                    height: scaledHeight * 0.075,
-                }}
-                onClick={() => (moves.updateMaxHealth)(-1)}
-            />);
-        }
-
-        if (healths[playerID].max < 10) {
-            nodes.push(<div
-                key='increase-max-health'
-                className='positioned image-div selectable increase-max-health'
-                style={{
-                    left: playerArea.x + scaledWidth * 0.375,
-                    top: playerArea.y + scaledHeight * 0.2,
-                    width: scaledWidth * 0.09,
-                    height: scaledHeight * 0.075,
-                }}
-                onClick={() => (moves.updateMaxHealth)(1)}
-            />);
-        }
-    }
-
-    addChain(playerArea, player, nodes) {
-        const { G, moves, playerID, scaledWidth, scaledHeight } = this.props;
-        const { isChained } = G;
-        let onClick = undefined;
-        if (player === playerID) {
-            onClick = () => moves.toggleChain();
-        }
-        if (player === playerID || isChained[player]) {
-            nodes.push(<div
-                key={`chain-${player}`}
-                className={classNames('positioned image-div chain', { 'gray': !isChained[player] }, { 'selectable': onClick !== undefined })}
-                style={{
-                    left: playerArea.x + (1 - ROLE_RATIO) * scaledWidth - 2 * INFO_DELTA,
-                    top: playerArea.y + scaledHeight * 0.2,
-                    width: scaledWidth * ROLE_RATIO + 2 * INFO_DELTA,
-                    height: scaledHeight * 0.16,
+        nodes.push(<div
+            key={`hp-${player}`}
+            className='positioned hp-label'
+            style={{
+                left: playerArea.x + INFO_DELTA,
+                top: playerArea.y + INFO_DELTA,
+                width: labelWidth,
+                height: labelHeight,
+                fontSize: scaledHeight * 0.05,
             }}
-                onClick={onClick}
-            />);
+        >
+            {`HP ${health.current}/${health.max}`}
+        </div>);
+
+        if (isMe) {
+            const btnWidth = scaledWidth * 0.12;
+            const btnHeight = labelHeight * 0.8;
+            const rowTop = playerArea.y + INFO_DELTA + labelHeight;
+            nodes.push(<button
+                key='hp-minus'
+                className='positioned hp-btn'
+                style={{
+                    left: playerArea.x + INFO_DELTA,
+                    top: rowTop,
+                    width: btnWidth,
+                    height: btnHeight,
+                    fontSize: scaledHeight * 0.045,
+                }}
+                onClick={() => moves.updateHealth(-1)}
+            >
+                {'-'}
+            </button>);
+            nodes.push(<button
+                key='hp-plus'
+                className='positioned hp-btn'
+                style={{
+                    left: playerArea.x + INFO_DELTA + btnWidth + INFO_DELTA,
+                    top: rowTop,
+                    width: btnWidth,
+                    height: btnHeight,
+                    fontSize: scaledHeight * 0.045,
+                }}
+                onClick={() => moves.updateHealth(1)}
+            >
+                {'+'}
+            </button>);
+            nodes.push(<button
+                key='hp-max-minus'
+                className='positioned hp-btn'
+                style={{
+                    left: playerArea.x + INFO_DELTA + 2 * (btnWidth + INFO_DELTA),
+                    top: rowTop,
+                    width: btnWidth * 1.3,
+                    height: btnHeight,
+                    fontSize: scaledHeight * 0.04,
+                }}
+                onClick={() => moves.updateMaxHealth(-1)}
+            >
+                {'上限-'}
+            </button>);
+            nodes.push(<button
+                key='hp-max-plus'
+                className='positioned hp-btn'
+                style={{
+                    left: playerArea.x + INFO_DELTA + 2 * (btnWidth + INFO_DELTA) + btnWidth * 1.3 + INFO_DELTA,
+                    top: rowTop,
+                    width: btnWidth * 1.3,
+                    height: btnHeight,
+                    fontSize: scaledHeight * 0.04,
+                }}
+                onClick={() => moves.updateMaxHealth(1)}
+            >
+                {'上限+'}
+            </button>);
         }
     }
 
-    addPlayerEquipment(playerArea, player, normalCards) {
-        const { G, moves, playerID, scaledWidth, scaledHeight } = this.props;
-        const { mode } = this.state;
-        const { equipment, isFlipped } = G;
-        ['Weapon', 'Shield', '+1', '-1', 'Lightning', 'Capture', 'Starvation'].forEach((category, i) => {
-            const card = equipment[player][category];
-            if (card) {
-                let onClick = undefined;
-                if ((mode === SetModePanel.DEFAULT_MODE && player === playerID)
-                    || mode === SetModePanel.DISMANTLE_MODE
-                    || mode === SetModePanel.STEAL_MODE) {
-                    onClick = () => {
-                        (mode === SetModePanel.DEFAULT_MODE || mode === SetModePanel.DISMANTLE_MODE ? moves.dismantle : moves.steal)({
-                            playerID: player,
-                            category,
-                        });
-                        this.setState({ mode: SetModePanel.DEFAULT_MODE });
-                    };
-                } else if (mode === SetModePanel.HELP_MODE) {
-                    onClick = () => this.setState({ helpCard: { key: card.type, src: `./cards/${card.type}.jpg` } });
-                }
-                if (i < 4) {
-                    // Equipment cards
-                    normalCards.push({
-                        key: `card-${card.id}`,
-                        className: 'small-shadow',
-                        card,
-                        faceUp: !isFlipped[card.id],
-                        opacity: 1,
-                        left: playerArea.x + (scaledWidth - (CARD_RATIO * scaledWidth + INFO_DELTA) * (2 - i % 2)),
-                        top: playerArea.y + (scaledHeight - (CARD_RATIO * scaledHeight + INFO_DELTA) * (2 - Math.floor(i / 2))),
-                        scale: CARD_RATIO,
-                        onClick,
-                    });
-                } else {
-                    // Judgment cards
-                    normalCards.push({
-                        key: `card-${card.id}`,
-                        className: 'small-shadow',
-                        card,
-                        faceUp: true,
-                        sideways: true,
-                        opacity: 1,
-                        left: playerArea.x + scaledWidth * 0.33,
-                        top: playerArea.y + scaledHeight * (0.16 + 0.18 * (i - 4)),
-                        scale: CARD_RATIO,
-                        onClick,
-                    });
-                }
-            }
-        });
-    }
-
-    addOtherPlayerHand(playerArea, player, normalCards, nodes) {
+    addOtherPlayerHand(playerArea, player, normalCards, nodes, showFaces) {
         const { G, moves, scaledWidth, scaledHeight } = this.props;
         const { mode } = this.state;
         const { hands } = G;
-        const hand = hands[player];
-        // Show the card backs
+        const hand = hands[player] || [];
+        // 显示其他玩家的手牌（默认牌背；GM 视角显示牌面）
         hand.forEach(card => {
             let onClick = undefined;
-            if (mode === SetModePanel.DISMANTLE_MODE || mode === SetModePanel.STEAL_MODE) {
+            if (!showFaces && (mode === SetModePanel.DISMANTLE_MODE || mode === SetModePanel.STEAL_MODE)) {
                 onClick = () => {
-                    (mode === SetModePanel.DISMANTLE_MODE ? moves.dismantle : moves.steal)({
+                    const move = mode === SetModePanel.DISMANTLE_MODE ? moves.dismantle : moves.steal;
+                    move({
                         playerID: player,
                         index: Math.floor(Math.random() * hand.length),
                     });
@@ -445,6 +249,7 @@ export default class GameArea extends React.Component {
                 key: `card-${card.id}`,
                 className: 'small-shadow',
                 card,
+                faceUp: showFaces,
                 opacity: 1,
                 left: playerArea.x + INFO_DELTA,
                 top: playerArea.y + (1 - CARD_RATIO) * scaledHeight - INFO_DELTA,
@@ -452,7 +257,7 @@ export default class GameArea extends React.Component {
                 onClick,
             });
         });
-        // Show the card count
+        // 显示手牌数量
         if (hand.length > 0) {
             nodes.push(<div
                 key={`card-count-${player}`}
@@ -472,58 +277,15 @@ export default class GameArea extends React.Component {
         }
     }
 
-    addOtherPlayerSelfZoneCards(playerArea, player, normalCards, nodes) {
-        const { G, scaledWidth, scaledHeight } = this.props;
-        const { selfZone } = G;
-        const hand = selfZone.filter(item => item.visibleTo.includes(player));
-        // Show the card backs
-        hand.forEach(card => {
-            let onClick = undefined;
-            normalCards.push({
-                key: `card-${card.id}`,
-                className: 'small-shadow',
-                card,
-                opacity: 1,
-                left: playerArea.x + INFO_DELTA + scaledWidth * 0.22,
-                top: playerArea.y + (1 - CARD_RATIO * 0.5) * scaledHeight - INFO_DELTA,
-                scale: CARD_RATIO * 0.5,
-                onClick,
-            });
-        });
-        // Show the card count
-        if (hand.length > 0) {
-            nodes.push(<div
-                key={`card-count-character-zone-${player}`}
-                className='game-label'
-                style={{
-                    left: playerArea.x + INFO_DELTA + scaledWidth * 0.22,
-                    top: playerArea.y + (1 - CARD_RATIO * 0.5) * scaledHeight - INFO_DELTA,
-                    width: scaledWidth * CARD_RATIO * 0.5,
-                    height: scaledHeight * CARD_RATIO * 0.5,
-                    marginLeft: scaledWidth * CARD_RATIO * 0.1,
-                    marginTop: scaledWidth * CARD_RATIO * 0.1,
-                    fontSize: scaledWidth * CARD_RATIO * 0.3,
-                }}
-            >
-                {hand.length}
-            </div>);
-        }
-    }
-
     addDeck(normalCards) {
         const { G, moves, height, scaledHeight } = this.props;
         const { mode } = this.state;
-        const { deck, privateZone } = G;
+        const { deck } = G;
         const MAX_CARDS_SHOWN = 10;
         deck.slice(-MAX_CARDS_SHOWN).forEach((card, i) => {
             let onClick = undefined;
-            if ((mode === SetModePanel.DEFAULT_MODE || mode === SetModePanel.SELF_ZONE_MODE) && card === deck[deck.length - 1]) {
-                const doingAstrology = privateZone.filter(item => item.source.deck).length > 0;
-                if (doingAstrology) {
-                    onClick = () => moves.astrology(1);
-                } else {
-                    onClick = () => moves.draw();
-                }
+            if (mode === SetModePanel.DEFAULT_MODE && card === deck[deck.length - 1]) {
+                onClick = () => moves.draw();
             }
             normalCards.push({
                 key: `card-${card.id}`,
@@ -539,16 +301,16 @@ export default class GameArea extends React.Component {
 
     addMyHand(normalCards) {
         const { G, playerID, width, height, scaledWidth, scaledHeight } = this.props;
-        const { hands, isFlipped } = G;
+        const { hands } = G;
         const myHand = hands[playerID];
         if (myHand) {
-            const spacing = Math.min(scaledWidth + DELTA, (width - (2 + DECK_RATIO) * scaledWidth - 5 * DELTA) / (hands[playerID].length - 1));
-            hands[playerID].forEach((card, i) => {
+            const spacing = Math.min(scaledWidth + DELTA, (width - (2 + DECK_RATIO) * scaledWidth - 5 * DELTA) / (myHand.length - 1));
+            myHand.forEach((card, i) => {
                 const onClick = this.selectFunction(i);
                 normalCards.push({
                     key: `card-${card.id}`,
                     card,
-                    faceUp: !isFlipped[card.id],
+                    faceUp: true,
                     opacity: onClick !== undefined ? 1 : 0.3,
                     left: DECK_RATIO * scaledWidth + 2 * DELTA + spacing * i,
                     top: height - scaledHeight - DELTA,
@@ -559,133 +321,46 @@ export default class GameArea extends React.Component {
         }
     }
 
-    getPrivateZoneCards(middleCardsFound) {
-        const { G, moves, playerID, width, height, scaledWidth, scaledHeight } = this.props;
-        const { mode } = this.state;
-        const { privateZone } = G;
-        const privateCards = privateZone.filter(item => item.visibleTo.includes(playerID));
-        const startX = (width - privateCards.length * scaledWidth * MIDDLE_CARD_RATIO - (privateCards.length - 1) * DELTA) / 2;
-        const normalCards = [];
-        privateCards.forEach(({ card }, i) => {
-            let onClick = undefined;
-            if (mode === SetModePanel.DEFAULT_MODE) {
-                onClick = () => moves.returnCard(card.id);
-            } else if (mode === SetModePanel.HELP_MODE) {
-                onClick = () => this.setState({ helpCard: { key: card.type, src: `./cards/${card.type}.jpg` } });
-            }
-            normalCards.push({
-                key: `card-${card.id}`,
-                className: 'shadow',
-                card,
-                faceUp: true,
-                opacity: middleCardsFound ? 0 : 1,
-                left: startX + (scaledWidth * MIDDLE_CARD_RATIO + DELTA) * i,
-                top: (height - scaledHeight * MIDDLE_CARD_RATIO) / 2,
-                scale: MIDDLE_CARD_RATIO,
-                onClick: middleCardsFound ? undefined : onClick,
-            });
-        });
-        return normalCards;
-    }
-
-    getSelfZoneCards(middleCardsFound) {
-        const { G, moves, playerID, width, height, scaledWidth, scaledHeight } = this.props;
-        const { selfZone } = G;
-        const selfCards = selfZone.filter(item => item.visibleTo.includes(playerID));
-        const startX = (width - selfCards.length * scaledWidth * MIDDLE_CARD_RATIO - (selfCards.length - 1) * DELTA) / 2;
-        const normalCards = [];
-        selfCards.forEach(({ card }, i) => {
-            normalCards.push({
-                key: `card-${card.id}`,
-                className: 'shadow',
-                card,
-                faceUp: true,
-                opacity: middleCardsFound ? 0 : 1,
-                left: startX + (scaledWidth * MIDDLE_CARD_RATIO + DELTA) * i,
-                top: (height - scaledHeight * MIDDLE_CARD_RATIO) / 2,
-                scale: MIDDLE_CARD_RATIO,
-                onClick: middleCardsFound ? undefined : () => moves.pickUpSelfZone(card.id),
-            });
-        });
-        return normalCards;
-    }
-
-    getHarvestCards(middleCardsFound) {
+    addDiscard(normalCards) {
         const { G, moves, width, height, scaledWidth, scaledHeight } = this.props;
         const { mode } = this.state;
-        const { harvest } = G;
-        const startX = (width - harvest.length * scaledWidth * MIDDLE_CARD_RATIO - (harvest.length - 1) * DELTA) / 2;
-        const normalCards = [];
-        harvest.forEach((card, i) => {
-            let onClick = undefined;
-            if (mode === SetModePanel.DEFAULT_MODE) {
-                onClick = () => moves.pickUpHarvest(i);
-            } else if (mode === SetModePanel.HELP_MODE) {
-                onClick = () => this.setState({ helpCard: { key: card.type, src: `./cards/${card.type}.jpg` } });
-            }
-            normalCards.push({
-                key: `card-${card.id}`,
-                className: 'shadow',
-                card,
-                faceUp: true,
-                opacity: middleCardsFound ? 0 : 1,
-                left: startX + (scaledWidth * MIDDLE_CARD_RATIO + DELTA) * i,
-                top: (height - scaledHeight * MIDDLE_CARD_RATIO) / 2,
-                scale: MIDDLE_CARD_RATIO,
-                onClick: middleCardsFound ? undefined : onClick,
-            });
-        });
-        return normalCards;
-    }
-
-    getDiscardCards(middleCardsFound) {
-        const { G, moves, width, height, scaledWidth, scaledHeight } = this.props;
-        const { mode } = this.state;
-        const { discard, isFlipped } = G;
+        const { discard } = G;
         const MAX_DISCARDS_SHOWN = 4;
         const numCardsShown = Math.min(discard.length, MAX_DISCARDS_SHOWN);
         const startX = (width - numCardsShown * scaledWidth * MIDDLE_CARD_RATIO - (numCardsShown - 1) * DELTA) / 2;
-        const normalCards = [];
         for (let i = 0; i < discard.length && i <= MAX_DISCARDS_SHOWN; i++) {
             const card = discard[discard.length - 1 - i];
             let onClick = undefined;
             if (mode === SetModePanel.DEFAULT_MODE && i < MAX_DISCARDS_SHOWN) {
                 onClick = () => moves.pickUp(discard.length - 1 - i);
-            } else if (mode === SetModePanel.FLIP_MODE) {
-                onClick = () => {
-                    moves.flipObject(card.id);
-                    this.setState({ mode: SetModePanel.DEFAULT_MODE });
-                };
-            } else if (mode === SetModePanel.HELP_MODE) {
-                onClick = () => this.setState({ helpCard: { key: card.type, src: `./cards/${card.type}.jpg` } });
             }
             normalCards.push({
                 key: `card-${card.id}`,
                 className: 'shadow',
                 card,
-                faceUp: !isFlipped[card.id],
-                opacity: i === MAX_DISCARDS_SHOWN || middleCardsFound ? 0 : 1,
+                faceUp: true,
+                opacity: i === MAX_DISCARDS_SHOWN ? 0 : 1,
                 left: startX + (scaledWidth * MIDDLE_CARD_RATIO + DELTA) * i,
                 top: (height - scaledHeight * MIDDLE_CARD_RATIO) / 2,
                 scale: MIDDLE_CARD_RATIO,
-                onClick: middleCardsFound ? undefined : onClick,
+                onClick,
             });
         }
-        return normalCards;
     }
 
     renderSetModePanel() {
         const { G, ctx, moves, playerID } = this.props;
-        const { mode } = this.state;
+        if (playerID === '-1') {
+            return undefined;
+        }
         return <SetModePanel
             key='set-mode-panel'
             G={G}
             ctx={ctx}
             moves={moves}
             playerID={playerID}
-            mode={mode}
-            setMode={mode => this.setState({ mode, selectedIndex: undefined, helpCard: undefined })}
-            setSelectedIndex={selectedIndex => this.setState({ selectedIndex })}
+            mode={this.state.mode}
+            setMode={mode => this.setState({ mode })}
             selectFunction={this.selectFunction}
         />;
     }
@@ -702,59 +377,23 @@ export default class GameArea extends React.Component {
     }
 
     renderActionButton() {
-        const { G, ctx, moves, playerID, width, height, scaledHeight, playAgain } = this.props;
-        const { mode, selectedIndex } = this.state;
-        const { isAlive, privateZone } = G;
-        const { currentPlayer, gameover, phase, activePlayers } = ctx;
+        const { ctx, playerID, width, height, scaledHeight, moves } = this.props;
+        if (playerID === '-1') {
+            return undefined;
+        }
+        const { currentPlayer } = ctx;
         const ACTION_BUTTON_WIDTH = 160;
         const ACTION_BUTTON_HEIGHT = 30;
         let actionButton = undefined;
-        if (gameover && playAgain) {
+        if (this.stage() === 'play' && currentPlayer === playerID) {
             actionButton = {
-                text: 'Play again',
-                type: 'selectable warn',
-                onClick: playAgain,
-            };
-        } else if (this.stage() === 'selectCharacter' && selectedIndex !== undefined) {
-            actionButton = {
-                text: 'Select',
-                type: 'selectable warn',
-                onClick: () => {
-                    moves.selectCharacter(selectedIndex);
-                    this.setState({ selectedIndex: undefined });
-                },
-            };
-        } else if (phase === 'selectCharacters' && this.stage() === undefined) {
-            actionButton = {
-                text: activePlayers[currentPlayer] === 'selectCharacter' ? 'Waiting for king...' : 'Waiting for others...',
-                type: 'disabled',
-            };
-        } else if (!isAlive[playerID]) {
-            return undefined;
-        } else if ((mode === SetModePanel.GIVE_MODE && selectedIndex !== undefined)
-            || (mode === SetModePanel.REVEAL_MODE && selectedIndex !== undefined)
-            || mode === SetModePanel.GIVE_JUDGMENT_MODE
-            || (mode === SetModePanel.COUNTRY_SCENE_MODE && selectedIndex !== undefined)
-            || (mode === SetModePanel.BLOCKADE_MODE && selectedIndex !== undefined)
-            || (mode === SetModePanel.ALLIANCE_MODE && selectedIndex === undefined)) {
-            actionButton = {
-                text: 'Select player',
-                type: 'disabled',
-            };
-        } else if (mode === SetModePanel.ALLIANCE_MODE && selectedIndex !== undefined) {
-            actionButton = {
-                text: 'Select player 2',
-                type: 'disabled',
-            };
-        } else if (this.stage() === 'play' && currentPlayer === playerID && privateZone.length === 0) {
-            actionButton = {
-                text: 'End play',
+                text: '结束出牌',
                 type: 'selectable warn',
                 onClick: () => moves.endPlay(),
             }
         } else if (this.stage() === 'discard') {
             actionButton = {
-                text: 'Discard cards',
+                text: '弃牌（需弃至不超过体力值）',
                 type: 'disabled',
             };
         }
@@ -776,69 +415,56 @@ export default class GameArea extends React.Component {
         }
     }
 
-    renderHelp() {
-        const { mode, helpCard } = this.state;
-        if (mode === SetModePanel.HELP_MODE && helpCard !== undefined) {
-            return <div
-                className='help-panel'
-            >
-                <img src={helpCard.src} alt='card' />
-                <div dangerouslySetInnerHTML={{ __html: RULES[helpCard.key] }} />
-                <button
-                    className='selectable bad'
-                    onClick={() => this.setState({ mode: SetModePanel.DEFAULT_MODE, helpCard: undefined })}
-                >
-                    {'X'}
-                </button>
-            </div>;
+    renderUploadInput() {
+        return <input
+            ref={el => this.fileInput = el}
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={this.handleFile}
+        />;
+    }
+
+    handleFile = e => {
+        const file = e.target.files && e.target.files[0];
+        const { uploadTarget } = this.state;
+        e.target.value = '';
+        if (!file || uploadTarget === undefined) {
+            return;
         }
+        const reader = new FileReader();
+        reader.onload = ev => {
+            const image = new Image();
+            image.onload = () => {
+                const scale = Math.min(1, IMAGE_MAX_SIZE / Math.max(image.width, image.height));
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.max(1, Math.round(image.width * scale));
+                canvas.height = Math.max(1, Math.round(image.height * scale));
+                canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                this.props.moves.setImage(dataUrl);
+                this.setState({ uploadTarget: undefined });
+            };
+            image.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
     }
 
     selectFunction = index => {
         const { G, moves, playerID } = this.props;
-        const { mode, selectedIndex } = this.state;
-        const { hands, harvest } = G;
+        const { mode } = this.state;
+        const { hands } = G;
         const card = hands[playerID][index];
+        if (card === undefined) {
+            return undefined;
+        }
         if (mode === SetModePanel.DEFAULT_MODE && this.stage() === 'play') {
-            if (harvest.length > 0) {
-                return () => moves.putDownHarvest(index);
-            } else if (['Capture', 'Starvation'].includes(EQUIPMENT[card.type])) {
-                return () => this.setState({ mode: SetModePanel.GIVE_JUDGMENT_MODE, selectedIndex: index });
-            } else {
-                return () => moves.play(index);
-            }
+            return () => moves.play(index);
         } else if (mode === SetModePanel.DEFAULT_MODE && this.stage() === 'discard') {
             return () => moves.discardCard(index);
-        } else if (mode === SetModePanel.GIVE_MODE && selectedIndex === undefined) {
-            return () => this.setState({ selectedIndex: index });
-        } else if (mode === SetModePanel.DISMANTLE_MODE) {
-            return () => {
-                moves.dismantle({
-                    playerID,
-                    index: index,
-                });
-                this.setState({ mode: SetModePanel.DEFAULT_MODE });
-            };
-        } else if (mode === SetModePanel.REVEAL_MODE && selectedIndex === undefined) {
-            return () => this.setState({ selectedIndex: index });
-        } else if (mode === SetModePanel.FLIP_MODE) {
-            return () => {
-                moves.flipObject(card.id);
-                this.setState({ mode: SetModePanel.DEFAULT_MODE });
-            };
-        } else if (mode === SetModePanel.SELF_ZONE_MODE) {
-            return () => moves.putDownSelfZone(index);
-        } else if (mode === SetModePanel.HELP_MODE) {
-            return () => this.setState({ helpCard: { key: card.type, src: `./cards/${card.type}.jpg` } });
-        } else if (mode === SetModePanel.COUNTRY_SCENE_MODE && selectedIndex === undefined) {
-            if (card.suit === 'DIAMOND') {
-                return () => this.setState({ mode: SetModePanel.COUNTRY_SCENE_MODE, selectedIndex: index });
-            }
-        } else if (mode === SetModePanel.BLOCKADE_MODE && selectedIndex === undefined) {
-            if (['CLUB', 'SPADE'].includes(card.suit) && (BASIC.includes(card.type) || EQUIPMENT[card.type])) {
-                return () => this.setState({ mode: SetModePanel.COUNTRY_SCENE_MODE, selectedIndex: index });
-            }
         }
+        // 拆牌/偷牌只针对其他玩家的手牌，自己的牌在 DEFAULT 模式下直接打出
+        return undefined;
     }
 
     stage() {

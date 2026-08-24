@@ -4,6 +4,28 @@
     font-size: 18px;
 }
 
+.lobby .title h1 {
+    color: #ffd27f;
+    font-size: 42px;
+    margin: 20px 0 10px 0;
+}
+
+/* GM 模式横幅 */
+.gm-banner {
+    position: fixed;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(255, 210, 127, 0.95);
+    color: #2B1A15;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 6px 16px;
+    border-radius: 8px;
+    z-index: 1000;
+    pointer-events: none;
+}
+
 .lobby .title {
     width: 100vw;
 }

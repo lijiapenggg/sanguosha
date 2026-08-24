@@ -8,7 +8,7 @@ import { applyMiddleware } from 'redux';
 const SanGuoShaClient = Client({
     game: SanGuoSha,
     board: SanGuoShaBoard,
-    numPlayers: 3,
+    numPlayers: 5,
     enhancer: applyMiddleware(logger),
 });
 

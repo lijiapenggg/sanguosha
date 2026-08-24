@@ -14,14 +14,13 @@ const SUITS = {
 export default class AnimatedBoard extends React.Component {
 
     render() {
-        const { width, height, scaledWidth, scaledHeight, characterCards, healthPoints, normalCards } = this.props;
+        const { scaledWidth, scaledHeight, characterCards, normalCards } = this.props;
         return <div>
             <AnimatedItems
                 items={characterCards}
                 from={_ => { return { opacity: 0 }; }}
                 update={item => {
                     return {
-                        faceUp: item.faceUp ? 1 : 0,
                         opacity: item.opacity,
                         left: item.left,
                         top: item.top,
@@ -29,13 +28,26 @@ export default class AnimatedBoard extends React.Component {
                 }}
                 clickable={true}
                 animated={(item, props) => {
-                    const { faceUp, opacity, left, top } = props;
+                    const { opacity, left, top } = props;
+                    if (item.placeholderText !== undefined) {
+                        return <animated.div
+                            className='positioned item image-placeholder'
+                            style={{
+                                opacity,
+                                left,
+                                top,
+                                width: item.width,
+                                height: item.height,
+                            }}
+                        >
+                            {item.placeholderText}
+                        </animated.div>;
+                    }
                     return <animated.img
                         className='positioned item shadow'
-                        src={faceUp.interpolate(faceUp => faceUp > 0.5 ? `./characters/${item.name}.jpg` : './characters/Character Back.jpg')}
-                        alt={item.name}
+                        src={item.src}
+                        alt='player image'
                         style={{
-                            transform: faceUp.interpolate(faceUp => `rotateY(${faceUp * 180 - (faceUp > 0.5 ? 180 : 0)}deg)`),
                             opacity,
                             left,
                             top,
@@ -43,24 +55,6 @@ export default class AnimatedBoard extends React.Component {
                             height: item.height,
                         }} />;
                 }}
-            />
-            <AnimatedItems
-                items={healthPoints}
-                from={_ => { return { opacity: 0, left: 0, top: 0, width, height } }}
-                update={item => { return { opacity: 1, left: item.left, top: item.top, width: item.width, height: item.height } }}
-                animated={(item, props) => <animated.img
-                    key={item.key}
-                    className='positioned item'
-                    src={`./health/health-${item.color}.png`}
-                    alt='health'
-                    style={{
-                        opacity: props.opacity,
-                        left: props.left,
-                        top: props.top,
-                        width: props.width,
-                        height: props.height,
-                    }}
-                />}
             />
             <AnimatedItems
                 items={normalCards}

@@ -1,53 +1,37 @@
-# San Guo Sha (三国杀)
+# 跑团卡牌桌（基于 sanguosha 改造）
 
-San Guo Sha is a [popular Chinese card game](https://en.wikipedia.org/wiki/Legends_of_the_Three_Kingdoms). This online multiplayer English version supports all the characters and cards in the base set, as well as the [expansions listed here](http://sanguoshaenglish.blogspot.com/p/expansions.html). Try it at https://util.in:8098.
+一个给跑团（TRPG）用的**网页版卡牌游戏**：类三国杀的手牌玩法 + **GM 主持人模式**，
+界面全中文。由 [kevinychen/sanguosha](https://github.com/kevinychen/sanguosha)
+（boardgame.io 0.43 + React 16）改造而来。
 
-![Sanguosha](docs/sanguosha.gif)
+## 功能
 
-Translations of all characters and cards are easily accessible in-game.
+- **单房间 5 名玩家**：进入页面自动创建/加入唯一房间。
+- **GM 模式**：以旁观者身份进入，可看到**所有玩家手牌**、上传图片与体力值；无操作权限。
+- **玩家图片**：每位玩家可自行上传图片显示在自己的角色位（自动压缩 ≤512px，同步给所有人与 GM）。
+- **纯手牌玩法**：摸牌 / 打牌弃牌 / 捡弃牌堆 / 过河拆桥 / 顺手牵羊 / 轮流回合（结束出牌→弃牌至≤体力）/ 体力调整。
 
-![Translations](docs/translations.gif)
+## 快速开始
 
-See the debut trailer [here](https://kevinychen.github.io/sanguosha).
+```bash
+npm install          # 自动执行 scripts/patch-boardgameio.mjs 补丁
+npm run server       # 启动于 http://localhost:8098
+```
 
-## How to use
+浏览器打开 http://localhost:8098：
+1. 输入名字进入；
+2. 点击空座位加入（最多 5 人），或点 **"以 GM 身份进入"** 旁观全部手牌；
+3. 点击牌堆摸牌，点击手牌打出；左上方工具栏切换"过河拆桥 / 顺手牵羊"模式后点击其他玩家手牌；
+4. 轮到自己时点"结束出牌"，弃牌至不超过体力值后自动换下一人。
 
-This app allows players to perform all the possible actions in the base set and supported expansions, but does not enforce rules other than tracking turn order and end-of-turn discards. The goal is to make it possible to easily play the game online with friends.
+> 开发模式：`npm run client`（前端 dev server，代理到 8098）。
 
-To draw a card from the deck, click the deck or press 'C'. (Click the "hotkeys" button on the left to see all hotkeys.)
+## 部署
 
-To play a card from hand normally, click on it or press the number corresponding to its position in your hand. The action will depend on the card; for example, equipment will be played on your character card, delay tool cards will prompt you to select a player to play it on, and most other cards will be sent to the discard pile in the middle of the screen. If you wish to send an equipment or delay tool card directly to the discard, then click "Dismantle" before selecting the card.
+详见 [DEPLOY.md](DEPLOY.md)：支持单一 Node 服务器（推荐）、GitHub Pages + 独立后端、纯局域网三种方式。
 
-The buttons on the left allow you to perform other actions, such as Giving one of your cards to another player, Dismantling/Stealing another card, Revealing one of your cards to another player, Flipping a card/character card, performing a Judgment, displaying N cards for a Harvest, or passing the Lightning card to the next player.
+## 说明
 
-To increase or decrease your health, click on the large health icons on your character card. If your health reaches 0, you reach "Brink of Death" and the game will prompt for whether you die. You can also toggle your chain status by clicking on the semi-transparent chain icon on your character card.
-
-Finally, some characters have special abilities that might not be possible to perform with the above actions. In these cases, there will be a special button on the left. For example, Zhuge Liang can click "Astrology" to view N cards, put some on top of the deck, and send the remaining to the bottom of the deck.
-
-To view English descriptions, click "Help" and then a card or character card to get its description.
-
-## Quickstart
-
-Run:
-
-    yarn install
-    yarn build   # build assets
-    yarn server  # start the server
-
-Then go to http://localhost:8098.
-
-## Development
-
-- First run `yarn install` once.
-- To run a game client-side only, run `yarn start`. To run with the server, run `yarn server` and `yarn client` in two different consoles.
-- Go to http://localhost:3000.
-
-## Credits
-
-- [Sanguosha](https://www.sanguosha.com/) for the game
-- [Becky Shi](https://shenlab.stanford.edu/people/rebecca-shi), for composing the original game background music and producing the debut trailer
-- [boardgame.io](https://boardgame.io/), a very convenient framework for producing online multiplayer games
-- [react-spring](https://www.react-spring.io/), an amazing library for easily producing animations
-- [English Sanguosha](http://www.englishsanguosha.com/), for rules, resources, and translations
-- Eva Yeung, Jeff Chen, Michael Wu, Natalle Yu, Tommy Zhang, and Yi-Shiuan Tung for playtesting
-
+- 本版本移除了武将/身份/装备/判定等系统，仅保留手牌相关玩法；牌堆仍为原版 108 张卡牌。
+- 服务器为"朋友桌信任模式"（见 `src/server/server.js`），GM 为旁观者无操作权限。
+- 对局数据（含图片）持久化在 `data/` 目录，每周自动清理超过 7 天的对局。
