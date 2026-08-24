@@ -25,6 +25,26 @@
     line-height: 1.6;
 }
 
+/* 手机适配：缩小工具栏，避免挡住棋盘 */
+@media (max-width: 700px) {
+    .set-mode-panel {
+        left: 8px;
+        top: 8px;
+    }
+
+    .set-mode-panel button {
+        width: 86px;
+        height: 36px;
+        font-size: 13px;
+        margin-bottom: 6px;
+    }
+
+    .set-mode-panel .hint {
+        font-size: 11px;
+        width: 120px;
+    }
+}
+
 .set-mode-panel button.selectable {
     cursor: pointer;
     background-color: rgba(128, 128, 128, 1.0);

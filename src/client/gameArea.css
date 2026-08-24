@@ -314,3 +314,23 @@ button.selectable:active {
 button.disabled {
     background-color: gray;
 }
+
+/* 手机适配 */
+@media (max-width: 700px) {
+    /* 输入框字号不小于 16px，避免 iOS 聚焦时自动放大页面 */
+    .hp-max-input {
+        font-size: 16px;
+    }
+
+    /* GM 操作区紧凑化 */
+    .gm-actions {
+        top: 44px;
+        max-width: 92vw;
+    }
+
+    .gm-actions .gm-status,
+    .gm-actions button {
+        font-size: 13px;
+        padding: 4px 10px;
+    }
+}
