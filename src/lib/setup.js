@@ -179,6 +179,12 @@ export default function setup(ctx, setupData) {
     const hands = Object.fromEntries(playOrder.map(player => [player, []]));
     const healths = Object.fromEntries(playOrder.map(player => [player, { max: 3, current: 3 }]));
     const playerImages = Object.fromEntries(playOrder.map(player => [player, undefined]));
+    const ready = Object.fromEntries(playOrder.map(player => [player, false]));
+    const roles = {};
+    const rolesDealt = false;
+    const kingRevealed = false;
+    const targets = [];
+    const targetSeq = 0;
 
     return {
         deck,
@@ -186,5 +192,11 @@ export default function setup(ctx, setupData) {
         hands,
         healths,
         playerImages,
+        ready,
+        roles,
+        rolesDealt,
+        kingRevealed,
+        targets,
+        targetSeq,
     };
 }

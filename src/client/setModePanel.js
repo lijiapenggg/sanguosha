@@ -6,6 +6,7 @@ export default class SetModePanel extends React.Component {
     static DEFAULT_MODE = 'default';
     static DISMANTLE_MODE = 'dismantle';
     static STEAL_MODE = 'steal';
+    static TARGET_MODE = 'target';
 
     componentDidMount() {
         document.addEventListener('keydown', this.handleHotkey);
@@ -16,12 +17,15 @@ export default class SetModePanel extends React.Component {
     }
 
     render() {
-        const { moves } = this.props;
+        const { moves, mode } = this.props;
         return <div className='set-mode-panel'>
             <div className='section'>
                 {this.renderModeButton(SetModePanel.DEFAULT_MODE, '默认')}
                 {this.renderModeButton(SetModePanel.DISMANTLE_MODE, '过河拆桥')}
                 {this.renderModeButton(SetModePanel.STEAL_MODE, '顺手牵羊')}
+                {mode === SetModePanel.TARGET_MODE
+                    ? <button className='toggled'>{'选择目标'}</button>
+                    : undefined}
             </div>
             <div className='section'>
                 <button

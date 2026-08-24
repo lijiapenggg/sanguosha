@@ -149,6 +149,75 @@ img {
     background-color: rgba(200, 60, 40, 1);
 }
 
+/* GM 状态文字 */
+.gm-status {
+    background-color: rgba(0, 0, 0, 0.6);
+    color: white;
+    border-radius: 8px;
+    padding: 6px 14px;
+    margin-bottom: 8px;
+    font-size: 14px;
+    text-align: center;
+}
+
+/* GM 发身份牌按钮 */
+.gm-deal {
+    background-color: rgba(0, 128, 0, 0.9);
+    border: 1px solid #fff;
+    border-radius: 8px;
+    color: white;
+    font-size: 14px;
+    padding: 6px 14px;
+    cursor: pointer;
+    margin-bottom: 8px;
+}
+
+.gm-deal:hover {
+    background-color: rgba(0, 128, 0, 1);
+}
+
+/* 卡牌指向箭头层（不拦截点击） */
+.target-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 50;
+}
+
+/* 身份牌徽章 */
+.role-badge {
+    position: absolute;
+    background-color: rgba(0, 0, 0, 0.75);
+    border-radius: 4px;
+    color: white;
+    text-align: center;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.role-badge.King {
+    background-color: rgba(200, 150, 0, 0.9);
+    color: #1a1a1a;
+    font-weight: bold;
+}
+
+.role-badge.Rebel {
+    background-color: rgba(200, 40, 40, 0.9);
+}
+
+.role-badge.Loyalist {
+    background-color: rgba(40, 80, 200, 0.9);
+}
+
+.role-badge.Spy {
+    background-color: rgba(40, 160, 80, 0.9);
+}
+
 .my-area {
     position: absolute;
     bottom: 0;
