@@ -1,0 +1,14 @@
+# Render Blueprint：游戏后端（boardgame.io + Node）
+# 免费层：支持 WebSocket，收到消息时保持唤醒（有人在线就不休眠）。
+# 部署方式：Render 控制台 → New Web Service → 连接本仓库 → 自动读取本文件。
+services:
+  - type: web
+    name: sanguosha-server
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run server
+    healthCheckPath: /
+    envVars:
+      - key: NODE_OPTIONS
+        value: --openssl-legacy-provider

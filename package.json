@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "homepage": ".",
   "dependencies": {
     "boardgame.io": "0.43.0",
     "classnames": "^2.2.6",

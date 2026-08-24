@@ -1,0 +1,48 @@
+name: 部署前端到 GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+      - name: 安装依赖（自动执行 boardgame.io 补丁脚本）
+        run: npm ci
+      - name: 确保补丁已应用
+        run: node scripts/patch-boardgameio.mjs
+      - name: 构建前端
+        env:
+          # 仓库变量 BACKEND_URL（Settings → Secrets and variables → Actions → Variables）
+          # 指向 Render 后端的地址，例如 https://sanguosha-server.onrender.com
+          REACT_APP_PROXY: ${{ vars.BACKEND_URL }}
+        run: NODE_OPTIONS=--openssl-legacy-provider npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
