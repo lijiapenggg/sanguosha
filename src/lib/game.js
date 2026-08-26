@@ -12,17 +12,21 @@ const ROLE_POOL_5 = ['King', 'Rebel', 'Rebel', 'Loyalist', 'Spy'];
 
 const MAX_TARGETS_KEPT = 8;
 
-// 策划 v0.3：主公展示时自动附加的血量上限加成
-const KING_HP_BONUS = 25;
+// 策划 §1.2（用户版）：主公展示时自动附加的血量上限加成
+const KING_HP_BONUS = 30;
 
-// 手牌上限（与血量脱钩）：默认 6；策划推荐 5+敏捷修正，由玩家/GM 填入
-const DEFAULT_HAND_LIMIT = 6;
-const MAX_HAND_LIMIT = 20;
-
+// 手牌上限随生命分段动态变化（策划 §1.1）：健康(>50%)→4，受伤(25~50%)→2，重伤(≤25%)→1；主公额外+1
 function handLimitOf(G, playerID) {
-    const limits = G.handLimits || {};
-    const v = limits[playerID];
-    return typeof v === 'number' && v > 0 ? v : DEFAULT_HAND_LIMIT;
+    const h = G.healths && G.healths[playerID];
+    if (!h || h.max <= 0) {
+        return 1;
+    }
+    const ratio = h.current / h.max;
+    let limit = ratio > 0.5 ? 4 : (ratio > 0.25 ? 2 : 1);
+    if (G.roles && G.roles[playerID] === 'King') {
+        limit += 1;
+    }
+    return limit;
 }
 
 /* Moves */
@@ -136,18 +140,6 @@ function setMaxHealth(G, ctx, value) {
     healths[playerID].current = max;
 }
 
-// 玩家自行输入手牌上限（与血量脱钩，默认 6）
-function setHandLimit(G, ctx, value) {
-    const { handLimits } = G;
-    const { playerID } = ctx;
-    const num = parseInt(value, 10);
-    if (!isFinite(num)) {
-        return;
-    }
-    const limit = Math.max(1, Math.min(MAX_HAND_LIMIT, num));
-    handLimits[playerID] = limit;
-}
-
 // 上传玩家自己的图片（dataURL 存入游戏状态，所有玩家与 GM 可见）
 function setImage(G, ctx, imageData) {
     const { playerImages } = G;
@@ -179,7 +171,7 @@ function dealRoles(G, ctx) {
     G.rolesDealt = true;
 }
 
-// 当前回合玩家：把回合主动交给主公，并公开主公身份；展示时自动附加主公血量加成
+// 当前回合玩家：把回合主动交给主公，并公开主公身份；展示时自动附加主公血量加成（+30）
 function revealKingAndHandTurn(G, ctx) {
     const { roles, kingRevealed } = G;
     if (kingRevealed || !G.rolesDealt) return;
@@ -188,7 +180,7 @@ function revealKingAndHandTurn(G, ctx) {
     const king = playOrder.find(p => roles[p] === 'King');
     if (king === undefined) return;
     G.kingRevealed = true;
-    // 主公血量加成（策划 v0.3：龙城卡血量 +25），仅应用一次
+    // 主公血量加成（策划 §1.2：龙城卡血量 +30），仅应用一次
     if (!G.kingBonusApplied && G.healths[king]) {
         G.healths[king].max += KING_HP_BONUS;
         G.healths[king].current = G.healths[king].max;
@@ -197,9 +189,9 @@ function revealKingAndHandTurn(G, ctx) {
     events.endTurn({ next: king });
 }
 
-// GM 专属：一键清空房间、重新开局（保留玩家上传的图片、体力上限与手牌上限）
+// GM 专属：一键清空房间、重新开局（保留玩家上传的图片与体力上限）
 function gmReset(G, ctx) {
-    const { playerImages, healths, handLimits } = G;
+    const { playerImages, healths } = G;
     const fresh = setup(ctx);
     fresh.playerImages = playerImages;
     const { playOrder } = ctx;
@@ -214,7 +206,6 @@ function gmReset(G, ctx) {
     G.hands = fresh.hands;
     G.healths = fresh.healths;
     G.playerImages = playerImages;
-    G.handLimits = handLimits || fresh.handLimits;
     G.ready = fresh.ready;
     G.roles = fresh.roles;
     G.rolesDealt = fresh.rolesDealt;
@@ -315,7 +306,6 @@ export const SanGuoSha = {
                             // 以下按玩家独立的操作忽略过期 stateID，避免多人同时操作时被拒
                             setImage: { move: setImage, ignoreStaleStateID: true },
                             setMaxHealth: { move: setMaxHealth, ignoreStaleStateID: true },
-                            setHandLimit: { move: setHandLimit, ignoreStaleStateID: true },
                             updateHealth: { move: updateHealth, ignoreStaleStateID: true },
                             ready: { move: ready, ignoreStaleStateID: true },
                             revealKingAndHandTurn,
@@ -328,7 +318,6 @@ export const SanGuoSha = {
                             discardCard,
                             finishDiscard,
                             setImage: { move: setImage, ignoreStaleStateID: true },
-                            setHandLimit: { move: setHandLimit, ignoreStaleStateID: true },
                         },
                     },
                     gm: {

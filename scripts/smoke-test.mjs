@@ -71,7 +71,6 @@ check('开局每人 4 张手牌（玩家0）', st0.G.hands['0'].length === 4, st
 check('初始体力 3/3', st0.G.healths['0'].max === 3 && st0.G.healths['0'].current === 3, st0.G.healths['0']);
 check('playerImages 已初始化', st0.G.playerImages !== undefined && st0.G.playerImages['0'] === undefined);
 check('未发身份牌（rolesDealt=false）', st0.G.rolesDealt === false);
-check('初始手牌上限为 6', st0.G.handLimits && st0.G.handLimits['0'] === 6, st0.G.handLimits);
 check('全员未就位', st0.G.ready && ['0', '1', '2', '3', '4'].every(p => st0.G.ready[p] === false), st0.G.ready);
 
 console.log('== 4. 就位 → GM 发身份牌 → 展示主公并交接回合 ==');
@@ -99,10 +98,6 @@ for (let i = 0; i < 5; i++) {
     await waitForState(c0, st => st.G.ready[String(i)] === true);
 }
 check('全员就位', ['0', '1', '2', '3', '4'].every(p => c0.getState().G.ready[p] === true), c0.getState().G.ready);
-// 手牌上限设置（与血量脱钩，默认 6）
-c0.moves.setHandLimit(4);
-await waitForState(c0, st => st.G.handLimits && st.G.handLimits['0'] === 4);
-check('玩家0 设置手牌上限为 4', c0.getState().G.handLimits['0'] === 4, c0.getState().G.handLimits);
 // GM 连接
 const cgm = Client({
     game: SanGuoSha,
@@ -138,9 +133,9 @@ await waitForState(c0, st => st.G.kingRevealed === true && st.ctx.currentPlayer 
 const stp0b = c0.getState();
 check('主公身份已对所有人展示', stp0b.G.roles[king] === 'King', stp0b.G.roles);
 check('回合已切换到主公', stp0b.ctx.currentPlayer === king, stp0b.ctx.currentPlayer);
-check('主公血量自动 +25（龙城卡血量 + 主公加成）',
-    stp0b.G.healths[king].max === kingMaxBefore + 25
-    && stp0b.G.healths[king].current === kingMaxBefore + 25
+check('主公血量自动 +30（龙城卡血量 + 主公加成）',
+    stp0b.G.healths[king].max === kingMaxBefore + 30
+    && stp0b.G.healths[king].current === kingMaxBefore + 30
     && stp0b.G.kingBonusApplied === true,
     stp0b.G.healths[king]);
 
@@ -238,32 +233,64 @@ check('清空后指向清空', stReset.G.targets.length === 0, stReset.G.targets
 check('清空后每人重新发 4 张', stReset.G.hands['0'].length === 4 && stReset.G.hands['4'].length === 4, [0, 4].map(i => stReset.G.hands[i.toString()].length));
 check('清空后弃牌堆为空', stReset.G.discard.length === 0, stReset.G.discard.length);
 check('清空后牌堆 = 160 - 20', stReset.G.deck.length === 140, stReset.G.deck.length);
-check('清空后体力回满且保留上限（玩家0=50，主公含加成，其余=3）',
+check('清空后体力回满且保留上限（玩家0=50，主公含+30加成，其余=3）',
     stReset.G.healths['0'].current === 50 && stReset.G.healths['0'].max === 50
-    && stReset.G.healths[king].max === (king === '0' ? 50 : kingMaxBefore + 25)
+    && stReset.G.healths[king].max === (king === '0' ? 50 : kingMaxBefore + 30)
     && ['1', '2', '3', '4'].filter(p => p !== king).every(p => stReset.G.healths[p].current === 3 && stReset.G.healths[p].max === 3),
     stReset.G.healths);
-check('清空后保留玩家手牌上限', stReset.G.handLimits['0'] === 4, stReset.G.handLimits);
 check('清空后主公加成标记重置', stReset.G.kingBonusApplied === false, stReset.G.kingBonusApplied);
 check('清空后保留玩家图片', stReset.G.playerImages['0'] === 'data:image/jpeg;base64,Zm9vYmFy');
 
-console.log('== 14. 弃牌按手牌上限结算（与血量脱钩） ==');
-const kingClient = clients[parseInt(king, 10)];
-const kingHandStart = kingClient.getState().G.hands[king].length;
-kingClient.moves.setHandLimit(2);
-await waitForState(kingClient, st => st.G.handLimits[king] === 2);
-check('主公设置手牌上限为 2', kingClient.getState().G.handLimits[king] === 2, kingClient.getState().G.handLimits);
+console.log('== 14. 手牌上限随生命分段动态变化（健康4/受伤2/重伤1，主公+1） ==');
+// gmReset 后身份已重置，先重新走：就位 → 发身份牌 → 展示主公（主公 +1 手牌上限才生效）
+for (let i = 0; i < 5; i++) {
+    clients[i].moves.ready();
+    await waitForState(cgm, st => st.G.ready[String(i)] === true);
+}
+cgm.moves.dealRoles();
+await waitForState(cgm, st => st.G.rolesDealt === true);
+const king2 = Object.keys(cgm.getState().G.roles).find(p => cgm.getState().G.roles[p] === 'King');
+const curP = cgm.getState().ctx.currentPlayer;
+clients[parseInt(curP, 10)].moves.revealKingAndHandTurn();
+await waitForState(cgm, st => st.G.kingRevealed === true && st.ctx.currentPlayer === king2);
+const kingClient = clients[parseInt(king2, 10)];
+// 主公自定上限 40，满血，手牌 4 张（gmReset 后重新发牌前）
+kingClient.moves.setMaxHealth(40);
+await waitForState(kingClient, st => st.G.healths[king2].max === 40 && st.G.healths[king2].current === 40);
+check('主公设定上限 40 且满血', kingClient.getState().G.healths[king2].current === 40, kingClient.getState().G.healths[king2]);
+// 场景A：受伤段（25%<HP≤50%）。40→16 → 16/40=40% → 基础2+主公1=3
+kingClient.moves.updateHealth(-24);
+await waitForState(kingClient, st => st.G.healths[king2].current === 16);
+check('主公受伤段（16/40）', kingClient.getState().G.healths[king2].current === 16, kingClient.getState().G.healths[king2]);
 kingClient.moves.endPlay();
-await waitForState(kingClient, st => st.ctx.activePlayers && st.ctx.activePlayers[king] === 'discard');
-check(`手牌(${kingHandStart}) > 上限(2) → 进入弃牌阶段`, kingClient.getState().ctx.activePlayers[king] === 'discard');
+await waitForState(kingClient, st => st.ctx.activePlayers && st.ctx.activePlayers[king2] === 'discard');
+check('受伤段：手牌4 > 上限3 → 进入弃牌阶段', kingClient.getState().ctx.activePlayers[king2] === 'discard');
 kingClient.moves.discardCard(0);
-await waitForState(kingClient, st => st.G.hands[king].length === kingHandStart - 1);
-kingClient.moves.discardCard(0);
-await waitForState(kingClient, st => st.G.hands[king].length === kingHandStart - 2);
+await waitForState(kingClient, st => st.G.hands[king2].length === 3);
 const stK1 = kingClient.getState();
-check('弃至手牌上限后回合结束（换人）',
-    stK1.ctx.currentPlayer !== king && stK1.G.hands[king].length === 2,
-    { hand: stK1.G.hands[king].length, currentPlayer: stK1.ctx.currentPlayer });
+check('弃1张到3 ≤ 上限3 → 回合结束（证明受伤段上限=3=2+主公1）',
+    stK1.ctx.currentPlayer !== king2 && stK1.G.hands[king2].length === 3,
+    { hand: stK1.G.hands[king2].length, currentPlayer: stK1.ctx.currentPlayer });
+// 场景B：重伤段（HP≤25%）。先把回合轮转回主公：其余玩家满血手牌4 ≤ 上限4 → 立即结束回合
+for (let i = 0; i < 4; i++) {
+    const cur = kingClient.getState().ctx.currentPlayer;
+    const curClient = clients[parseInt(cur, 10)];
+    curClient.moves.endPlay();
+    await waitForState(curClient, st => st.ctx.currentPlayer !== cur);
+}
+check('回合已轮转回主公', kingClient.getState().ctx.currentPlayer === king2, kingClient.getState().ctx.currentPlayer);
+// 主公 16→10 → 10/40=25% ≤25% → 基础1+主公1=2；此时手牌 3
+kingClient.moves.updateHealth(-6);
+await waitForState(kingClient, st => st.G.healths[king2].current === 10);
+kingClient.moves.endPlay();
+await waitForState(kingClient, st => st.ctx.activePlayers && st.ctx.activePlayers[king2] === 'discard');
+check('重伤段：手牌3 > 上限2 → 进入弃牌阶段', kingClient.getState().ctx.activePlayers[king2] === 'discard');
+kingClient.moves.discardCard(0);
+await waitForState(kingClient, st => st.G.hands[king2].length === 2);
+const stK2 = kingClient.getState();
+check('弃1张到2 ≤ 上限2 → 回合结束（证明重伤段上限=2=1+主公1）',
+    stK2.ctx.currentPlayer !== king2 && stK2.G.hands[king2].length === 2,
+    { hand: stK2.G.hands[king2].length, currentPlayer: stK2.ctx.currentPlayer });
 
 for (const c of clients) {
     c.stop();

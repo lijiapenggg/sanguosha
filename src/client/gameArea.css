@@ -97,7 +97,7 @@ img {
     pointer-events: none;
 }
 
-/* 生命分段（策划 v0.3）：>50% 健康 / 25~50% 受伤 / ≤25% 重伤 */
+/* 生命分段（策划 §1.1）：>50% 健康 / 25~50% 受伤 / ≤25% 重伤 */
 .hp-label.health-ok {
     background-color: rgba(0, 120, 0, 0.75);
 }
@@ -108,6 +108,19 @@ img {
 
 .hp-label.health-danger {
     background-color: rgba(200, 40, 40, 0.85);
+}
+
+/* 手牌上限徽章（随生命分段动态变化，主公+1） */
+.hand-limit-badge {
+    position: absolute;
+    color: #ffd27f;
+    background-color: rgba(0, 0, 0, 0.6);
+    border-radius: 4px;
+    padding: 2px 4px;
+    box-sizing: border-box;
+    text-align: center;
+    line-height: 1;
+    pointer-events: none;
 }
 
 .hp-btn {

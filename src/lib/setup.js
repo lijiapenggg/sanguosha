@@ -178,14 +178,12 @@ export default function setup(ctx, setupData) {
 
     const hands = Object.fromEntries(playOrder.map(player => [player, []]));
     const healths = Object.fromEntries(playOrder.map(player => [player, { max: 3, current: 3 }]));
-    // 手牌上限（与血量脱钩，默认 6；策划推荐 5+敏捷修正，由玩家/GM 填入）
-    const handLimits = Object.fromEntries(playOrder.map(player => [player, 6]));
     const playerImages = Object.fromEntries(playOrder.map(player => [player, undefined]));
     const ready = Object.fromEntries(playOrder.map(player => [player, false]));
     const roles = {};
     const rolesDealt = false;
     const kingRevealed = false;
-    // 主公血量加成是否已应用（展示主公时自动 +25）
+    // 主公血量加成（+30）是否已应用（展示主公时自动应用一次）
     const kingBonusApplied = false;
     const targets = [];
     const targetSeq = 0;
@@ -195,7 +193,6 @@ export default function setup(ctx, setupData) {
         discard,
         hands,
         healths,
-        handLimits,
         playerImages,
         ready,
         roles,
