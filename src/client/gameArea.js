@@ -211,9 +211,13 @@ export default class GameArea extends React.Component {
         const labelWidth = scaledWidth * 0.3;
         const labelHeight = scaledHeight * 0.08;
 
+        // 生命分段（策划 v0.3）：>50% 健康 / 25~50% 受伤 / ≤25% 重伤
+        const ratio = health.max > 0 ? health.current / health.max : 0;
+        const healthClass = ratio > 0.5 ? 'health-ok' : (ratio > 0.25 ? 'health-warn' : 'health-danger');
+
         nodes.push(<div
             key={`hp-${player}`}
-            className='positioned hp-label'
+            className={classNames('positioned hp-label', healthClass)}
             style={{
                 left: playerArea.x + INFO_DELTA,
                 top: playerArea.y + INFO_DELTA,
@@ -229,6 +233,7 @@ export default class GameArea extends React.Component {
             const btnWidth = scaledWidth * 0.12;
             const btnHeight = labelHeight * 0.8;
             const rowTop = playerArea.y + INFO_DELTA + labelHeight;
+            const secondRowTop = rowTop + btnHeight + INFO_DELTA;
             nodes.push(<button
                 key='hp-minus'
                 className='positioned hp-btn'
@@ -292,6 +297,43 @@ export default class GameArea extends React.Component {
             >
                 {'设定'}
             </button>);
+            // 手牌上限（与血量脱钩，默认 6；策划推荐 5+敏捷修正，自行填入）
+            const handLimits = G.handLimits || {};
+            const myLimit = handLimits[player];
+            nodes.push(<input
+                key='hand-limit-input'
+                ref={el => this.handLimitInput = el}
+                className='positioned hp-max-input'
+                type="number"
+                min="1"
+                defaultValue={typeof myLimit === 'number' ? myLimit : 6}
+                onKeyPress={e => {
+                    if (e.nativeEvent.key === 'Enter') {
+                        this.setHandLimitFromInput();
+                    }
+                }}
+                style={{
+                    left: playerArea.x + INFO_DELTA,
+                    top: secondRowTop,
+                    width: btnWidth * 1.8,
+                    height: btnHeight,
+                    fontSize: scaledHeight * 0.04,
+                }}
+            />);
+            nodes.push(<button
+                key='hand-limit-set'
+                className='positioned hp-btn'
+                style={{
+                    left: playerArea.x + INFO_DELTA + btnWidth * 1.8 + INFO_DELTA,
+                    top: secondRowTop,
+                    width: btnWidth * 1.2,
+                    height: btnHeight,
+                    fontSize: scaledHeight * 0.04,
+                }}
+                onClick={() => this.setHandLimitFromInput()}
+            >
+                {'上限'}
+            </button>);
         }
     }
 
@@ -299,6 +341,13 @@ export default class GameArea extends React.Component {
         const input = this.hpMaxInput;
         if (input) {
             this.props.moves.setMaxHealth(input.value);
+        }
+    }
+
+    setHandLimitFromInput() {
+        const input = this.handLimitInput;
+        if (input) {
+            this.props.moves.setHandLimit(input.value);
         }
     }
 
