@@ -42,6 +42,9 @@ export default class SanGuoShaLobby extends React.Component {
             lobbyView.addEventListener('click', this.props.playAudio);
         }
         this.refreshLobbyState();
+        // 关闭标签页/刷新时自动离开座位（sendBeacon 在页面卸载时也能可靠送达），
+        // 避免关闭标签页留下"幽灵占位"导致后来的玩家加不进房间
+        window.addEventListener('pagehide', this.leaveOnUnload);
     }
 
     componentWillUnmount() {
@@ -49,7 +52,21 @@ export default class SanGuoShaLobby extends React.Component {
         if (lobbyView) {
             lobbyView.removeEventListener('click', this.props.playAudio);
         }
+        window.removeEventListener('pagehide', this.leaveOnUnload);
         clearTimeout(this.timeout);
+    }
+
+    leaveOnUnload = () => {
+        const { matchInfo } = this.state;
+        if (matchInfo === undefined || matchInfo.credentials === undefined) {
+            return; // 未入座或 GM（无凭据）无需处理
+        }
+        const { matchID, playerID, credentials } = matchInfo;
+        const body = new Blob(
+            [JSON.stringify({ playerID, credentials })],
+            { type: 'application/json' },
+        );
+        navigator.sendBeacon(`${SERVER}/games/${SanGuoSha.name}/${matchID}/leave`, body);
     }
 
     refreshLobbyState = async () => {
