@@ -36,11 +36,6 @@ export default class SanGuoShaLobby extends React.Component {
     }
 
     componentDidMount() {
-        // Mobile requires explicit user action to play audio
-        const lobbyView = document.querySelector('#lobby-view');
-        if (lobbyView) {
-            lobbyView.addEventListener('click', this.props.playAudio);
-        }
         this.refreshLobbyState();
         // 关闭标签页/刷新时自动离开座位（sendBeacon 在页面卸载时也能可靠送达），
         // 避免关闭标签页留下"幽灵占位"导致后来的玩家加不进房间
@@ -48,10 +43,6 @@ export default class SanGuoShaLobby extends React.Component {
     }
 
     componentWillUnmount() {
-        const lobbyView = document.querySelector('#lobby-view');
-        if (lobbyView) {
-            lobbyView.removeEventListener('click', this.props.playAudio);
-        }
         window.removeEventListener('pagehide', this.leaveOnUnload);
         clearTimeout(this.timeout);
     }

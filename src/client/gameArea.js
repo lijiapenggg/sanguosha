@@ -673,15 +673,29 @@ export default class GameArea extends React.Component {
         const reader = new FileReader();
         reader.onload = ev => {
             const image = new Image();
-            image.onload = () => {
+            image.onload = async () => {
                 const scale = Math.min(1, IMAGE_MAX_SIZE / Math.max(image.width, image.height));
                 const canvas = document.createElement('canvas');
                 canvas.width = Math.max(1, Math.round(image.width * scale));
                 canvas.height = Math.max(1, Math.round(image.height * scale));
                 canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-                this.props.moves.setImage(dataUrl);
-                this.setState({ uploadTarget: undefined });
+                canvas.toBlob(async blob => {
+                    try {
+                        // 上传到服务器文件，状态里只存 URL（避免 base64 大图随每次广播重发）
+                        const form = new FormData();
+                        form.append('image', blob, 'avatar.jpg');
+                        form.append('matchID', this.props.matchID || '');
+                        form.append('playerID', this.props.playerID || '');
+                        const res = await fetch('/api/upload', { method: 'POST', body: form });
+                        const data = await res.json();
+                        if (res.ok && data.url) {
+                            this.props.moves.setImage(data.url);
+                        }
+                    } catch (err) {
+                        // 上传失败：不阻塞
+                    }
+                    this.setState({ uploadTarget: undefined });
+                }, 'image/jpeg', 0.85);
             };
             image.src = ev.target.result;
         };

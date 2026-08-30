@@ -2,8 +2,14 @@ import { FlatFile, Server } from 'boardgame.io/dist/cjs/server.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import serve from 'koa-static';
+import koaBody from 'koa-body';
+import fs from 'fs';
 import { nanoid } from 'nanoid';
 import { SanGuoSha } from '../lib/game.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// 上传目录放在 data/ 之外（node-persist 会扫描 data/，子目录会导致 EISDIR）
+const uploadsDir = path.resolve(__dirname, '../../uploads');
 
 const db = new FlatFile({ dir: 'data' });
 
@@ -96,13 +102,44 @@ server.app.use(async (ctx, next) => {
         ctx.body = result;
         return;
     }
+    // 上传玩家图片：存到 data/uploads/，返回静态 URL（避免 base64 图片随每次广播重发，挤占带宽）
+    if (ctx.method === 'POST' && ctx.path === '/api/upload') {
+        return koaBody({
+            multipart: true,
+            formidable: { maxFileSize: 3 * 1024 * 1024 },
+        })(ctx, async () => {
+            try {
+                const file = ctx.request.files && ctx.request.files.image;
+                const { matchID, playerID } = ctx.request.body || {};
+                if (!file || !file.path || !matchID || playerID === undefined) {
+                    ctx.status = 400;
+                    ctx.body = { error: '缺少文件或参数' };
+                    return;
+                }
+                const filename = `${matchID}-${playerID}-${Date.now()}-${nanoid(6)}.jpg`;
+                fs.mkdirSync(uploadsDir, { recursive: true });
+                const dest = path.join(uploadsDir, filename);
+                // 跨盘符不能 rename（formidable 临时文件在系统 Temp），用复制+删除
+                fs.copyFileSync(file.path, dest);
+                try {
+                    fs.unlinkSync(file.path);
+                } catch (e) {
+                    // 临时文件清理失败可忽略
+                }
+                ctx.body = { url: `/uploads/${filename}` };
+            } catch (e) {
+                ctx.status = 500;
+                ctx.body = { error: e.message || String(e) };
+            }
+        });
+    }
     await next();
 });
 
-// Build path relative to the server.js file
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontEndAppBuildPath = path.resolve(__dirname, '../../build');
 server.app.use(serve(frontEndAppBuildPath))
+// 上传的玩家图片静态服务
+server.app.use(serve(uploadsDir, { prefix: '/uploads' }))
 
 server.run(PORT, () => {
     server.app.use(

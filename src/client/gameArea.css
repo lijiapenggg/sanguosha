@@ -37,33 +37,6 @@ img {
     color: orange;
 }
 
-.decrease-health {
-    background-image: url('/health/health-red.png');
-    background-size: cover;
-}
-
-.increase-health {
-    background-image: url('/health/health-green.png');
-    background-size: cover;
-}
-
-.decrease-max-health {
-    background-image: url('/health/health-minus.png');
-    background-size: contain;
-    background-repeat: no-repeat;
-}
-
-.increase-max-health {
-    background-image: url('/health/health-plus.png');
-    background-size: contain;
-    background-repeat: no-repeat;
-}
-
-.chain {
-    background-image: url('/chain.png');
-    background-size: cover;
-}
-
 .game-label {
     position: absolute;
     color: white;

@@ -1,4 +1,3 @@
-import * as classNames from 'classnames';
 import React from 'react';
 import { render } from 'react-dom';
 import Room from './client/room';
@@ -6,31 +5,9 @@ import Lobby from './client/lobby';
 
 class App extends React.Component {
 
-    constructor(props) {
-        super(props);
-        this.audio = new Audio();
-        this.audio.src = './background.mp3';
-        this.audio.volume = 0.1;
-        this.audio.loop = true;
-        // 手机浏览器会阻止自动播放，捕获 rejected promise 避免控制台报错
-        this.audio.play().catch(() => { });
-        this.state = { volume: 0.1 };
-    }
-
-    playAudio = () => {
-        this.audio.play().catch(() => { });
-    }
-
     render() {
         return <div>
-            {process.env.REACT_APP_LOCAL ? <Room /> : <Lobby playAudio={this.playAudio} />}
-            <button
-                className={classNames('toggle-sound', this.state.volume === 0 ? 'off' : 'on')}
-                onClick={() => {
-                    this.audio.volume = 0.1 - this.audio.volume;
-                    this.setState({ volume: this.audio.volume });
-                }}
-            />
+            {process.env.REACT_APP_LOCAL ? <Room /> : <Lobby />}
         </div>;
     }
 }

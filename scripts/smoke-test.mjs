@@ -317,6 +317,20 @@ check('清空后 5 个座位全部释放', m2after !== undefined && m2after.play
 const rejoined = await fetch(`${SERVER}/api/join?matchID=${encodeURIComponent(m2)}&playerID=${encodeURIComponent('0')}&playerName=${encodeURIComponent('重进')}`, { method: 'POST' }).then(r => r.json());
 check('清空后座位可重新加入', rejoined.status === 200, rejoined);
 
+console.log('== 16. 图片上传接口（URL 存储，避免 base64 广播放大） ==');
+const imgBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0xff, 0xd9]);
+const uploadForm = new FormData();
+uploadForm.append('image', new Blob([imgBytes], { type: 'image/jpeg' }), 'avatar.jpg');
+uploadForm.append('matchID', m2);
+uploadForm.append('playerID', '0');
+const upRes = await fetch(`${SERVER}/api/upload`, { method: 'POST', body: uploadForm });
+const upData = await upRes.json();
+check('上传接口返回 /uploads/ URL', upRes.status === 200 && typeof upData.url === 'string' && upData.url.startsWith('/uploads/'), upData);
+if (upData.url) {
+    const getRes = await fetch(`${SERVER}${upData.url}`);
+    check('上传的图片可访问', getRes.status === 200, getRes.status);
+}
+
 for (const c of clients) {
     c.stop();
 }

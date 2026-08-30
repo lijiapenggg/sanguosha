@@ -1,4 +1,5 @@
 /data
+/uploads
 /node_modules
 /build
 *.log
