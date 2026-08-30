@@ -5,7 +5,7 @@
  */
 import { LobbyClient, Client } from 'boardgame.io/dist/cjs/client.js';
 import { SocketIO } from 'boardgame.io/dist/cjs/multiplayer.js';
-import { SanGuoSha } from '../src/lib/game.js';
+import { SanGuoSha, TARGETED_CARDS } from '../src/lib/game.js';
 
 const SERVER = 'http://localhost:8098';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -205,24 +205,59 @@ if (attackIdx !== -1) {
     check('目标玩家（玩家1）也能看到指向', clients[1].getState().G.targets.some(t => t.source === '0' && t.target === '1' && t.cardType === 'Attack'), clients[1].getState().G.targets);
 }
 
+console.log('== 10b. 指向连线：下一张牌后消失/被替换 ==');
+// 再打一张指向牌 → 只保留最新一条（旧连线被替换）
+// 找不到就继续摸牌，确保替换逻辑被测到
+let tIdx2 = c0.getState().G.hands['0'].findIndex(c => TARGETED_CARDS.includes(c.type));
+guard = 0;
+while (tIdx2 === -1 && guard < 40) {
+    const before = c0.getState().G.hands['0'].length;
+    c0.moves.draw();
+    await waitForState(c0, st => st.G.hands['0'].length === before + 1);
+    tIdx2 = c0.getState().G.hands['0'].findIndex(c => TARGETED_CARDS.includes(c.type));
+    guard++;
+}
+if (tIdx2 !== -1) {
+    c0.moves.playTargeted(tIdx2, '2');
+    await waitForState(c0, st => st.G.targets && st.G.targets.length === 1 && st.G.targets[0].target === '2');
+    check('新指向替换旧连线（只剩 1 条）', c0.getState().G.targets.length === 1 && c0.getState().G.targets[0].target === '2', c0.getState().G.targets);
+    // 确保其他客户端也追上最新状态（避免后续卡牌操作因过期 stateID 被拒）
+    await waitForState(clients[1], st => st.G.targets && st.G.targets.length === 1 && st.G.targets[0].target === '2');
+    await waitForState(clients[2], st => st.G.targets && st.G.targets.length === 1 && st.G.targets[0].target === '2');
+} else {
+    console.log('  跳过：手牌无第二张指向牌');
+}
+// 打一张普通牌 → 连线消失
+const tIdx3 = c0.getState().G.hands['0'].findIndex(c => !TARGETED_CARDS.includes(c.type));
+if (tIdx3 !== -1) {
+    c0.moves.play(tIdx3);
+    await waitForState(c0, st => st.G.targets && st.G.targets.length === 0);
+    check('打出普通牌后连线消失', c0.getState().G.targets.length === 0, c0.getState().G.targets);
+    // 同样确保其他客户端追上，再进入第 11 节（steal/dismantle 会因过期 stateID 被拒）
+    await waitForState(clients[1], st => st.G.targets && st.G.targets.length === 0);
+    await waitForState(clients[2], st => st.G.targets && st.G.targets.length === 0);
+} else {
+    console.log('  跳过：手牌无普通牌');
+}
+
 console.log('== 11. 顺手牵羊 / 过河拆桥 ==');
-const st1 = clients[1].getState();
-const p0handBefore = st1.G.hands['0'].length;
+// 全部以 GM 客户端（cgm，从未发过 move，状态永远最新）为权威读数
+const p0handBefore = cgm.getState().G.hands['0'].length;
+const p1handBefore = cgm.getState().G.hands['1'].length;
 clients[1].moves.steal({ playerID: '0', index: 0 });
-const st1b = await waitForState(clients[1], st => st.G.hands['1'].length === st1.G.hands['1'].length + 1);
-check('玩家1手牌 +1', st1b.G.hands['1'].length === st1.G.hands['1'].length + 1);
-check('玩家0手牌 -1', st1b.G.hands['0'].length === p0handBefore - 1, { before: p0handBefore, after: st1b.G.hands['0'].length });
-const p0hand2 = clients[2].getState().G.hands['0'].length;
+await waitForState(cgm, st => st.G.hands['1'].length === p1handBefore + 1);
+check('玩家1手牌 +1', cgm.getState().G.hands['1'].length === p1handBefore + 1);
+check('玩家0手牌 -1', cgm.getState().G.hands['0'].length === p0handBefore - 1, { before: p0handBefore, after: cgm.getState().G.hands['0'].length });
+const p0hand2 = cgm.getState().G.hands['0'].length;
 clients[2].moves.dismantle({ playerID: '0', index: 0 });
-const st2b = await waitForState(clients[2], st => st.G.hands['0'].length === p0hand2 - 1);
-check('玩家0手牌 -1（被拆）', st2b.G.hands['0'].length === p0hand2 - 1);
+await waitForState(cgm, st => st.G.hands['0'].length === p0hand2 - 1);
+check('玩家0手牌 -1（被拆）', cgm.getState().G.hands['0'].length === p0hand2 - 1);
 
 console.log('== 12. 普通玩家不能调用 GM 清空 ==');
-await waitForState(clients[1], st => st.G.hands['0'].length === p0hand2 - 1);
-const handBefore12 = clients[1].getState().G.hands['0'].length;
+const handBefore12 = cgm.getState().G.hands['0'].length;
 clients[1].moves.gmReset();
 await sleep(600);
-check('玩家调用 gmReset 无效（手牌不变）', clients[1].getState().G.hands['0'].length === handBefore12, { before: handBefore12, after: clients[1].getState().G.hands['0'].length });
+check('玩家调用 gmReset 无效（手牌不变）', cgm.getState().G.hands['0'].length === handBefore12, { before: handBefore12, after: cgm.getState().G.hands['0'].length });
 
 console.log('== 13. GM 一键清空房间（重新开局） ==');
 cgm.moves.gmReset();
@@ -291,6 +326,21 @@ const stK2 = kingClient.getState();
 check('弃1张到2 ≤ 上限2 → 回合结束（证明重伤段上限=2=1+主公1）',
     stK2.ctx.currentPlayer !== king2 && stK2.G.hands[king2].length === 2,
     { hand: stK2.G.hands[king2].length, currentPlayer: stK2.ctx.currentPlayer });
+
+console.log('== 14b. 回合按顺序流转（结束回合 → 下一位） ==');
+// 从当前 currentPlayer 开始，连续"结束回合"5 次，应回到起始玩家（一圈）
+const startP = cgm.getState().ctx.currentPlayer;
+const order = [startP];
+for (let i = 0; i < 5; i++) {
+    const cur = cgm.getState().ctx.currentPlayer;
+    const curClient = clients[parseInt(cur, 10)];
+    curClient.moves.endPlay();
+    await waitForState(curClient, st => st.ctx.currentPlayer !== cur);
+    order.push(cgm.getState().ctx.currentPlayer);
+}
+check('回合按顺序流转一圈（5 步回到起点，且无重复相邻）',
+    order[5] === startP && order.every((p, i) => i === 0 || order[i - 1] !== p),
+    order);
 
 console.log('== 15. 并发加入（修复 409/丢更新）与 GM 清空玩家 ==');
 // 新开一个非 singleton 房间做并发测试，避免影响主房间

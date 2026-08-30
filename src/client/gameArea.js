@@ -52,7 +52,7 @@ export default class GameArea extends React.Component {
 
     render() {
         const { ctx, playerID, width, height, playerAreas, scaledWidth, scaledHeight } = this.props;
-        const { numPlayers, playOrder } = ctx;
+        const { numPlayers, playOrder, currentPlayer } = ctx;
         const isGM = playerID === '-1';
 
         const characterCards = [];
@@ -69,6 +69,19 @@ export default class GameArea extends React.Component {
             this.addPlayerImage(playerArea, player, isMe, characterCards);
             this.addHealth(playerArea, player, isMe, nodes);
             this.addRoleBadge(playerArea, player, isMe, nodes);
+            if (player === currentPlayer) {
+                // 当前回合玩家：金色框框高亮（所有人可见，含 GM）
+                nodes.push(<div
+                    key={`turn-frame-${player}`}
+                    className='positioned current-player-frame'
+                    style={{
+                        left: playerArea.x - 4,
+                        top: playerArea.y - 4,
+                        width: scaledWidth + 8,
+                        height: scaledHeight + 8,
+                    }}
+                />);
+            }
             if (isGM || !isMe) {
                 this.addOtherPlayerHand(playerArea, player, normalCards, nodes, isGM);
             }
@@ -94,6 +107,23 @@ export default class GameArea extends React.Component {
             {this.renderSetModePanel()}
             {this.renderGMActions()}
             {this.renderUploadInput()}
+            {this.renderTurnBanner()}
+        </div>;
+    }
+
+    renderTurnBanner() {
+        const { ctx, playerID, matchData } = this.props;
+        if (playerID === '-1') {
+            // GM 顶部已显示 GM 横幅，不再叠加
+            return undefined;
+        }
+        const { currentPlayer, playOrder } = ctx;
+        const idx = playOrder.indexOf(currentPlayer);
+        const name = matchData && matchData[idx] && matchData[idx].name
+            ? matchData[idx].name
+            : `玩家 ${currentPlayer}`;
+        return <div className='turn-banner'>
+            {`当前回合：${name}`}
         </div>;
     }
 

@@ -10,8 +10,6 @@ export const ROLE_LABELS = { King: '主公', Rebel: '反贼', Loyalist: '忠臣'
 // 5 人局身份分布：1 主公、2 反贼、1 忠臣、1 内奸
 const ROLE_POOL_5 = ['King', 'Rebel', 'Rebel', 'Loyalist', 'Spy'];
 
-const MAX_TARGETS_KEPT = 8;
-
 // 策划 §1.2（用户版）：主公展示时自动附加的血量上限加成
 const KING_HP_BONUS = 30;
 
@@ -50,9 +48,12 @@ function play(G, ctx, index) {
         return;
     }
     discard(G, ctx, card);
+    // 打出普通牌后，上一条指向连线消失（连线只表示最近一次行动）
+    G.targets = [];
 }
 
-// 打出需要目标的卡牌：记录“谁用【什么】指向了谁”，所有人（含 GM）可见
+// 打出需要目标的卡牌：记录“谁用【什么】指向了谁”，所有人（含 GM）可见；
+// 只保留最近一条（打出下一张牌后旧连线消失/被替换）
 function playTargeted(G, ctx, index, targetPlayerID) {
     if (!G.rolesDealt) return;
     const { hands } = G;
@@ -63,19 +64,14 @@ function playTargeted(G, ctx, index, targetPlayerID) {
     }
     discard(G, ctx, card);
     if (TARGETED_CARDS.includes(card.type) && targetPlayerID !== undefined) {
-        const targets = G.targets || [];
-        targets.push({
+        G.targets = [{
             id: G.targetSeq || 0,
             source: playerID,
             target: targetPlayerID,
             cardType: card.type,
             cardId: card.id,
-        });
+        }];
         G.targetSeq = (G.targetSeq || 0) + 1;
-        if (targets.length > MAX_TARGETS_KEPT) {
-            targets.splice(0, targets.length - MAX_TARGETS_KEPT);
-        }
-        G.targets = targets;
     }
 }
 
