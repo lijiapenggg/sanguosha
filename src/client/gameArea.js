@@ -2,7 +2,7 @@ import * as classNames from 'classnames';
 import React from 'react';
 import SetModePanel from './setModePanel';
 import AnimatedBoard from './animatedBoard';
-import { TARGETED_CARDS, ROLE_LABELS } from '../lib/game.js';
+import { TARGETED_CARDS, ROLE_LABELS, EQUIP_SLOT_ORDER, EQUIP_SLOT_LABELS, equipSlotOf } from '../lib/game.js';
 import './gameArea.css';
 
 // 卡牌类型中文名（用于指向箭头上的文字）
@@ -15,6 +15,32 @@ const CARD_CN = {
     'Capture': '乐不思蜀',
     'Starvation': '兵粮寸断',
     'Lightning': '闪电',
+};
+
+// 装备牌中文名（装备栏内明牌显示）
+const EQUIP_CN = {
+    'Crossbow': '诸葛连弩',
+    'Fire Fan': '朱雀羽扇',
+    'Axe': '贯石斧',
+    'Longbow': '麒麟弓',
+    'Green Dragon Blade': '青龙偃月刀',
+    'Serpent Spear': '丈八蛇矛',
+    'Ice Sword': '寒冰剑',
+    'Ancient Scimitar': '古锭刀',
+    'Gender Swords': '雌雄双股剑',
+    'Black Pommel': '青釭剑',
+    'Sky Scorcher': '方天画戟',
+    'Eight Trigrams': '八卦阵',
+    'Silver Helmet': '白银狮子',
+    'Black Shield': '仁王盾',
+    'Wood Armor': '藤甲',
+    'Red Hare': '赤兔',
+    'Da Yuan': '大宛',
+    'Zi Xing': '紫骍',
+    'Di Lu': '的卢',
+    'Storm Runner': '绝影',
+    'Shadow Runner': '爪黄飞电',
+    'Hua Liu': '骅骝',
 };
 
 // Standard margin between objects
@@ -42,6 +68,10 @@ export default class GameArea extends React.Component {
         this.state = {
             mode: SetModePanel.DEFAULT_MODE,
             uploadTarget: undefined,
+            editingHp: false,
+            hpEditCurrent: '',
+            hpEditMax: '',
+            draggingCardId: undefined, // 当前拖拽的手牌 id
         };
     }
 
@@ -68,6 +98,7 @@ export default class GameArea extends React.Component {
             this.addPlayerName(playerArea, playerIndex, player, nodes);
             this.addPlayerImage(playerArea, player, isMe, characterCards);
             this.addHealth(playerArea, player, isMe, nodes);
+            this.addEquipment(playerArea, player, isMe, nodes);
             this.addRoleBadge(playerArea, player, isMe, nodes);
             if (player === currentPlayer) {
                 // 当前回合玩家：金色框框高亮（所有人可见，含 GM）
@@ -91,7 +122,10 @@ export default class GameArea extends React.Component {
         this.addMyHand(normalCards);
         this.addDiscard(normalCards);
 
-        return <div>
+        return <div
+            onDragOver={this.onBoardDragOver}
+            onDrop={this.onBoardDrop}
+        >
             {this.renderMyArea()}
             <AnimatedBoard
                 width={width}
@@ -108,6 +142,7 @@ export default class GameArea extends React.Component {
             {this.renderGMActions()}
             {this.renderUploadInput()}
             {this.renderTurnBanner()}
+            {this.renderHpEditor()}
         </div>;
     }
 
@@ -265,9 +300,11 @@ export default class GameArea extends React.Component {
             handLimit += 1;
         }
 
+        // 自己的 HP 标签可点击，点击后弹出编辑框（当前 HP / 上限分别输入）
+        const editable = isMe;
         nodes.push(<div
             key={`hp-${player}`}
-            className={classNames('positioned hp-label', healthClass)}
+            className={classNames('positioned hp-label', healthClass, { 'hp-label-editable': editable })}
             style={{
                 left: playerArea.x + INFO_DELTA,
                 top: playerArea.y + INFO_DELTA,
@@ -275,6 +312,7 @@ export default class GameArea extends React.Component {
                 height: labelHeight,
                 fontSize: scaledHeight * 0.05,
             }}
+            onClick={editable ? () => this.openHpEditor(player) : undefined}
         >
             {`HP ${health.current}/${health.max}`}
         </div>);
@@ -324,50 +362,177 @@ export default class GameArea extends React.Component {
             >
                 {'+'}
             </button>);
-            // 自行输入体力上限（D&D 等大数值），回车或点“设定”生效
-            nodes.push(<input
-                key='hp-max-input'
-                ref={el => this.hpMaxInput = el}
-                className='positioned hp-max-input'
-                type="number"
-                min="1"
-                defaultValue={health.max}
-                onKeyPress={e => {
-                    if (e.nativeEvent.key === 'Enter') {
-                        this.setMaxHealthFromInput();
-                    }
-                }}
-                style={{
-                    left: playerArea.x + INFO_DELTA + 2 * (btnWidth + INFO_DELTA),
-                    top: rowTop,
-                    width: btnWidth * 1.8,
-                    height: btnHeight,
-                    fontSize: scaledHeight * 0.04,
-                }}
-            />);
-            nodes.push(<button
-                key='hp-max-set'
-                className='positioned hp-btn'
-                style={{
-                    left: playerArea.x + INFO_DELTA + 2 * (btnWidth + INFO_DELTA) + btnWidth * 1.8 + INFO_DELTA,
-                    top: rowTop,
-                    width: btnWidth * 1.2,
-                    height: btnHeight,
-                    fontSize: scaledHeight * 0.04,
-                }}
-                onClick={() => this.setMaxHealthFromInput()}
-            >
-                {'设定'}
-            </button>);
         }
     }
 
-    setMaxHealthFromInput() {
-        const input = this.hpMaxInput;
-        if (input) {
-            this.props.moves.setMaxHealth(input.value);
-        }
+    // 点击 HP 标签：弹出编辑框（当前 HP 与上限分别输入），输入框加大
+    openHpEditor(player) {
+        const { G } = this.props;
+        const health = G.healths[player];
+        this.setState({
+            editingHp: true,
+            hpEditCurrent: String(health.current),
+            hpEditMax: String(health.max),
+        });
     }
+
+    closeHpEditor() {
+        this.setState({ editingHp: false });
+    }
+
+    submitHpEditor() {
+        const { moves } = this.props;
+        moves.setHealth({
+            current: this.state.hpEditCurrent,
+            max: this.state.hpEditMax,
+        });
+        this.closeHpEditor();
+    }
+
+    renderHpEditor() {
+        if (!this.state.editingHp) {
+            return undefined;
+        }
+        return <div className='hp-editor-overlay'>
+            <div className='hp-editor'>
+                <div className='hp-editor-title'>{'设置 HP'}</div>
+                <div className='hp-editor-row'>
+                    <div className='hp-editor-field'>
+                        <div className='hp-editor-label'>{'当前 HP'}</div>
+                        <input
+                            className='hp-editor-input'
+                            type="number"
+                            min="0"
+                            autoFocus
+                            value={this.state.hpEditCurrent}
+                            onChange={e => this.setState({ hpEditCurrent: e.target.value })}
+                            onKeyPress={e => {
+                                if (e.nativeEvent.key === 'Enter') {
+                                    this.submitHpEditor();
+                                }
+                            }}
+                        />
+                    </div>
+                    <div className='hp-editor-field'>
+                        <div className='hp-editor-label'>{'上限'}</div>
+                        <input
+                            className='hp-editor-input'
+                            type="number"
+                            min="1"
+                            value={this.state.hpEditMax}
+                            onChange={e => this.setState({ hpEditMax: e.target.value })}
+                            onKeyPress={e => {
+                                if (e.nativeEvent.key === 'Enter') {
+                                    this.submitHpEditor();
+                                }
+                            }}
+                        />
+                    </div>
+                </div>
+                <div className='hp-editor-actions'>
+                    <button className='hp-editor-btn hp-editor-ok' onClick={() => this.submitHpEditor()}>
+                        {'确定'}
+                    </button>
+                    <button className='hp-editor-btn hp-editor-cancel' onClick={() => this.closeHpEditor()}>
+                        {'取消'}
+                    </button>
+                </div>
+            </div>
+        </div>;
+    }
+
+    // 装备栏：头像下方横排 4 格（武器 / 护甲 / 防御马 / 进攻马）
+    // 装备牌对所有人明牌（含 GM）；只有本人可拖入/拖出
+    addEquipment(playerArea, player, isMe, nodes) {
+        const { G, moves, scaledWidth, scaledHeight } = this.props;
+        const eq = G.equipment && G.equipment[player];
+        if (!eq) {
+            return;
+        }
+        const slotWidth = scaledWidth * 0.34;
+        const slotHeight = scaledHeight * 0.14;
+        const gap = 3;
+        const totalWidth = slotWidth * EQUIP_SLOT_ORDER.length + gap * (EQUIP_SLOT_ORDER.length - 1);
+        const startX = playerArea.x + (scaledWidth - totalWidth) / 2;
+        const top = playerArea.y + scaledHeight + INFO_DELTA + scaledHeight * 0.2 + 4;
+
+        EQUIP_SLOT_ORDER.forEach((slot, i) => {
+            const card = eq[slot];
+            const left = startX + (slotWidth + gap) * i;
+            const draggable = isMe && card !== undefined;
+            nodes.push(<div
+                key={`eq-${player}-${slot}`}
+                className={classNames('positioned equip-slot', { 'equip-filled': card !== undefined, 'equip-self': isMe })}
+                style={{
+                    left,
+                    top,
+                    width: slotWidth,
+                    height: slotHeight,
+                }}
+                onDragOver={isMe ? (e => e.preventDefault()) : undefined}
+                onDrop={isMe ? (e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const cardId = e.dataTransfer.getData('text/plain');
+                    if (cardId && !cardId.startsWith('unequip:')) {
+                        moves.equipByCardId(cardId);
+                    }
+                    this.setState({ draggingCardId: undefined });
+                }) : undefined}
+            >
+                {card === undefined
+                    ? <div className='equip-placeholder'>{EQUIP_SLOT_LABELS[slot]}</div>
+                    : <div
+                        className='equip-card'
+                        draggable={draggable}
+                        onDragStart={draggable ? (e => {
+                            e.dataTransfer.setData('text/plain', `unequip:${slot}`);
+                            e.dataTransfer.effectAllowed = 'move';
+                            this.setState({ draggingEquipSlot: slot });
+                        }) : undefined}
+                        onDragEnd={draggable ? (() => this.setState({ draggingEquipSlot: undefined })) : undefined}
+                        onClick={draggable ? (() => moves.unequip(slot)) : undefined}
+                        title={draggable ? '点击或拖出：卸下装备' : EQUIP_CN[card.type] || card.type}
+                    >
+                        <img className='equip-card-img' src={`./cards/${card.type}.jpg`} alt={card.type} draggable={false} />
+                        <div className='equip-card-name'>{EQUIP_CN[card.type] || card.type}</div>
+                    </div>}
+            </div>);
+        });
+    }
+
+    // 手牌卡片可拖拽到装备栏；拖到棋盘空白处无效果（仅装备牌可入栏）
+    handDragProps(card) {
+        const slot = equipSlotOf(card.type);
+        if (slot === undefined) {
+            return undefined;
+        }
+        return {
+            draggable: true,
+            onDragStart: e => {
+                e.dataTransfer.setData('text/plain', card.id);
+                e.dataTransfer.effectAllowed = 'copy';
+                this.setState({ draggingCardId: card.id });
+            },
+            onDragEnd: () => this.setState({ draggingCardId: undefined }),
+        };
+    }
+
+    // 棋盘根区域：处理“拖出装备扔到桌上”（卸下装备）
+    onBoardDragOver = e => {
+        if (this.state.draggingEquipSlot !== undefined) {
+            e.preventDefault();
+        }
+    };
+
+    onBoardDrop = e => {
+        const { moves } = this.props;
+        if (this.state.draggingEquipSlot !== undefined) {
+            e.preventDefault();
+            moves.unequip(this.state.draggingEquipSlot);
+            this.setState({ draggingEquipSlot: undefined });
+        }
+    };
 
     // 身份牌：只有本人与 GM 可见；主公展示后对所有人可见
     addRoleBadge(playerArea, player, isMe, nodes) {
@@ -546,6 +711,7 @@ export default class GameArea extends React.Component {
             const spacing = Math.min(scaledWidth + DELTA, (width - (2 + DECK_RATIO) * scaledWidth - 5 * DELTA) / (myHand.length - 1));
             myHand.forEach((card, i) => {
                 const onClick = this.selectFunction(i);
+                const dragProps = this.handDragProps(card);
                 normalCards.push({
                     key: `card-${card.id}`,
                     card,
@@ -555,6 +721,7 @@ export default class GameArea extends React.Component {
                     top: height - scaledHeight - DELTA,
                     scale: 1,
                     onClick,
+                    ...dragProps,
                 });
             })
         }

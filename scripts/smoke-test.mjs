@@ -5,7 +5,7 @@
  */
 import { LobbyClient, Client } from 'boardgame.io/dist/cjs/client.js';
 import { SocketIO } from 'boardgame.io/dist/cjs/multiplayer.js';
-import { SanGuoSha, TARGETED_CARDS } from '../src/lib/game.js';
+import { SanGuoSha, TARGETED_CARDS, WEAPON_TYPES, ARMOR_TYPES, OFFENSIVE_HORSE_TYPES, DEFENSIVE_HORSE_TYPES, equipSlotOf } from '../src/lib/game.js';
 
 const SERVER = 'http://localhost:8098';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -341,6 +341,105 @@ for (let i = 0; i < 5; i++) {
 check('回合按顺序流转一圈（5 步回到起点，且无重复相邻）',
     order[5] === startP && order.every((p, i) => i === 0 || order[i - 1] !== p),
     order);
+
+console.log('== 14c. HP 当前值与上限分别输入（setHealth） ==');
+// 用玩家 0（非主公）测试：只改当前值 / 只改上限 / 同时改
+{
+    const c0s = clients[0];
+    c0s.moves.setHealth({ current: 7, max: 20 });
+    await waitForState(cgm, st => st.G.healths['0'].current === 7 && st.G.healths['0'].max === 20);
+    check('同时设置当前值 7 与上限 20', cgm.getState().G.healths['0'].current === 7 && cgm.getState().G.healths['0'].max === 20, cgm.getState().G.healths['0']);
+    c0s.moves.setHealth({ max: 30 });
+    await waitForState(cgm, st => st.G.healths['0'].max === 30 && st.G.healths['0'].current === 7);
+    check('只改上限 30，当前值保持不变', cgm.getState().G.healths['0'].max === 30 && cgm.getState().G.healths['0'].current === 7, cgm.getState().G.healths['0']);
+    c0s.moves.setHealth({ current: 99 });
+    await waitForState(cgm, st => st.G.healths['0'].current === 30);
+    check('当前值超过上限被钳制为上限 30', cgm.getState().G.healths['0'].current === 30, cgm.getState().G.healths['0']);
+    // 恢复默认（避免影响后续节）
+    c0s.moves.setHealth({ current: 50, max: 50 });
+    await waitForState(cgm, st => st.G.healths['0'].current === 50 && st.G.healths['0'].max === 50);
+    check('恢复 HP 50/50', cgm.getState().G.healths['0'].current === 50 && cgm.getState().G.healths['0'].max === 50, cgm.getState().G.healths['0']);
+}
+
+console.log('== 17. 装备栏：装备牌进装备栏而非弃牌堆，可卸下，全桌明牌 ==');
+// 用玩家 0 摸牌找一张装备牌
+{
+    const c0s = clients[0];
+    const isEquip = c => equipSlotOf(c.type) !== undefined;
+    let equipIdx = c0s.getState().G.hands['0'].findIndex(isEquip);
+    let guard = 0;
+    while (equipIdx === -1 && guard < 60) {
+        const before = c0s.getState().G.hands['0'].length;
+        c0s.moves.draw();
+        await waitForState(c0s, st => st.G.hands['0'].length === before + 1);
+        equipIdx = c0s.getState().G.hands['0'].findIndex(isEquip);
+        guard++;
+    }
+    check('玩家0手牌中找到了装备牌', equipIdx !== -1, guard);
+    if (equipIdx !== -1) {
+        const stBefore = cgm.getState();
+        const card = stBefore.G.hands['0'][equipIdx];
+        const slot = equipSlotOf(card.type);
+        const handBefore = stBefore.G.hands['0'].length;
+        const discardBefore = stBefore.G.discard.length;
+        // 打出装备牌 → 应进装备栏而非弃牌堆
+        c0s.moves.play(equipIdx);
+        await waitForState(cgm, st => st.G.equipment && st.G.equipment['0'][slot] !== undefined);
+        const stAfter = cgm.getState();
+        check('装备牌进装备栏（槽位 ' + slot + '）', stAfter.G.equipment['0'][slot] !== undefined && stAfter.G.equipment['0'][slot].id === card.id, stAfter.G.equipment['0'][slot]);
+        check('手牌 -1', stAfter.G.hands['0'].length === handBefore - 1, { before: handBefore, after: stAfter.G.hands['0'].length });
+        check('装备牌未进弃牌堆', stAfter.G.discard.length === discardBefore, { before: discardBefore, after: stAfter.G.discard.length });
+        // GM 也能看到装备（明牌）
+        check('GM 能看到该装备（明牌）', cgm.getState().G.equipment['0'][slot] !== undefined, cgm.getState().G.equipment['0'][slot]);
+        // 卸下（拖出扔到桌上）→ 装备进弃牌堆、槽位清空
+        c0s.moves.unequip(slot);
+        await waitForState(cgm, st => st.G.equipment['0'][slot] === undefined);
+        const stUneq = cgm.getState();
+        check('卸下后槽位清空', stUneq.G.equipment['0'][slot] === undefined, stUneq.G.equipment['0'][slot]);
+        check('卸下的装备进弃牌堆', stUneq.G.discard.some(c => c.id === card.id), stUneq.G.discard.map(c => c.id).includes(card.id));
+        // 拖拽装备（equipByCardId）：再找一张装备牌，按 cardId 装备
+        equipIdx = c0s.getState().G.hands['0'].findIndex(isEquip);
+        guard = 0;
+        while (equipIdx === -1 && guard < 60) {
+            const before = c0s.getState().G.hands['0'].length;
+            c0s.moves.draw();
+            await waitForState(c0s, st => st.G.hands['0'].length === before + 1);
+            equipIdx = c0s.getState().G.hands['0'].findIndex(isEquip);
+            guard++;
+        }
+        if (equipIdx !== -1) {
+            const card2 = c0s.getState().G.hands['0'][equipIdx];
+            const slot2 = equipSlotOf(card2.type);
+            c0s.moves.equipByCardId(card2.id);
+            await waitForState(cgm, st => st.G.equipment['0'][slot2] !== undefined && st.G.equipment['0'][slot2].id === card2.id);
+            check('拖拽装备（equipByCardId）成功', cgm.getState().G.equipment['0'][slot2].id === card2.id, cgm.getState().G.equipment['0'][slot2]);
+            // 同槽位再装备 → 旧装备进弃牌堆、新装备替换
+            const oldCardId = card2.id;
+            equipIdx = c0s.getState().G.hands['0'].findIndex(c => equipSlotOf(c.type) === slot2);
+            guard = 0;
+            while (equipIdx === -1 && guard < 60) {
+                const before = c0s.getState().G.hands['0'].length;
+                c0s.moves.draw();
+                await waitForState(c0s, st => st.G.hands['0'].length === before + 1);
+                equipIdx = c0s.getState().G.hands['0'].findIndex(c => equipSlotOf(c.type) === slot2);
+                guard++;
+            }
+            if (equipIdx !== -1) {
+                const card3 = c0s.getState().G.hands['0'][equipIdx];
+                const discardBefore2 = cgm.getState().G.discard.length;
+                c0s.moves.play(equipIdx);
+                await waitForState(cgm, st => st.G.equipment['0'][slot2].id === card3.id);
+                const stRep = cgm.getState();
+                check('同槽位替换：新装备入栏', stRep.G.equipment['0'][slot2].id === card3.id, stRep.G.equipment['0'][slot2]);
+                check('同槽位替换：旧装备进弃牌堆', stRep.G.discard.some(c => c.id === oldCardId), { discarded: stRep.G.discard.map(c => c.id).includes(oldCardId), discardBefore: discardBefore2, discardAfter: stRep.G.discard.length });
+            } else {
+                console.log('  跳过：手牌无同槽位第二张装备牌');
+            }
+        } else {
+            console.log('  跳过：手牌无第二张装备牌');
+        }
+    }
+}
 
 console.log('== 15. 并发加入（修复 409/丢更新）与 GM 清空玩家 ==');
 // 新开一个非 singleton 房间做并发测试，避免影响主房间

@@ -4,6 +4,25 @@ import { drawCard, drawCards, discard } from './helper.js';
 // 需要指向目标的卡牌（杀、部分锦囊牌）
 export const TARGETED_CARDS = ['Attack', 'Duel', 'Dismantle', 'Steal', 'Fire Attack', 'Capture', 'Starvation', 'Lightning'];
 
+// 装备牌分类（三国杀标准）
+export const WEAPON_TYPES = ['Crossbow', 'Fire Fan', 'Axe', 'Longbow', 'Green Dragon Blade', 'Serpent Spear', 'Ice Sword', 'Ancient Scimitar', 'Gender Swords', 'Black Pommel', 'Sky Scorcher'];
+export const ARMOR_TYPES = ['Eight Trigrams', 'Silver Helmet', 'Black Shield', 'Wood Armor'];
+export const OFFENSIVE_HORSE_TYPES = ['Red Hare', 'Da Yuan', 'Zi Xing'];   // 进攻马（-1 马）
+export const DEFENSIVE_HORSE_TYPES = ['Di Lu', 'Storm Runner', 'Shadow Runner', 'Hua Liu']; // 防御马（+1 马）
+
+// 装备槽位顺序（前端渲染与后端存储共用）
+export const EQUIP_SLOT_ORDER = ['weapon', 'armor', 'defHorse', 'offHorse'];
+export const EQUIP_SLOT_LABELS = { weapon: '武器', armor: '护甲', defHorse: '防御马', offHorse: '进攻马' };
+
+// 卡牌类型 → 装备槽位（非装备牌返回 undefined）
+export function equipSlotOf(type) {
+    if (WEAPON_TYPES.includes(type)) return 'weapon';
+    if (ARMOR_TYPES.includes(type)) return 'armor';
+    if (DEFENSIVE_HORSE_TYPES.includes(type)) return 'defHorse';
+    if (OFFENSIVE_HORSE_TYPES.includes(type)) return 'offHorse';
+    return undefined;
+}
+
 // 身份牌中文名
 export const ROLE_LABELS = { King: '主公', Rebel: '反贼', Loyalist: '忠臣', Spy: '内奸' };
 
@@ -47,8 +66,41 @@ function play(G, ctx, index) {
     if (card === undefined) {
         return;
     }
-    discard(G, ctx, card);
-    // 打出普通牌后，上一条指向连线消失（连线只表示最近一次行动）
+    const slot = equipSlotOf(card.type);
+    const eq = G.equipment && G.equipment[playerID];
+    if (slot !== undefined && eq) {
+        // 装备牌：放入装备栏（同槽位旧装备进弃牌堆），而非弃牌堆
+        if (eq[slot]) {
+            discard(G, ctx, eq[slot]);
+        }
+        eq[slot] = card;
+    } else {
+        discard(G, ctx, card);
+    }
+    // 打出牌后，上一条指向连线消失（连线只表示最近一次行动）
+    G.targets = [];
+}
+
+// 拖拽装备：按牌 id 从手牌装备到装备栏（仅装备牌有效）
+function equipByCardId(G, ctx, cardId) {
+    if (!G.rolesDealt) return;
+    const { hands } = G;
+    const { playerID } = ctx;
+    const idx = hands[playerID].findIndex(c => c.id === cardId);
+    if (idx === -1) return;
+    const card = hands[playerID][idx];
+    if (equipSlotOf(card.type) === undefined) return;
+    play(G, ctx, idx);
+}
+
+// 拖出/取下装备：装备栏中的牌弃到弃牌堆（扔到桌子上）
+function unequip(G, ctx, slot) {
+    if (!G.rolesDealt) return;
+    const { playerID } = ctx;
+    const eq = G.equipment && G.equipment[playerID];
+    if (!eq || !eq[slot]) return;
+    discard(G, ctx, eq[slot]);
+    eq[slot] = undefined;
     G.targets = [];
 }
 
@@ -136,6 +188,32 @@ function setMaxHealth(G, ctx, value) {
     healths[playerID].current = max;
 }
 
+// 分别设置当前 HP 与 HP 上限（点击 HP 标签后弹出输入框，可只填其一）
+function setHealth(G, ctx, value) {
+    const { healths } = G;
+    const { playerID } = ctx;
+    const h = healths[playerID];
+    if (!h) return;
+    const v = value || {};
+    if (v.max !== undefined && v.max !== null && v.max !== '') {
+        const max = Math.max(1, Math.min(9999, parseInt(v.max, 10)));
+        if (isFinite(max)) {
+            h.max = max;
+        }
+    }
+    if (v.current !== undefined && v.current !== null && v.current !== '') {
+        const cur = Math.max(0, Math.min(h.max, parseInt(v.current, 10)));
+        if (isFinite(cur)) {
+            h.current = cur;
+        }
+    } else {
+        // 只改上限时，当前值钳制到新上限内
+        if (h.current > h.max) {
+            h.current = h.max;
+        }
+    }
+}
+
 // 上传玩家自己的图片（dataURL 存入游戏状态，所有玩家与 GM 可见）
 function setImage(G, ctx, imageData) {
     const { playerImages } = G;
@@ -209,6 +287,7 @@ function gmReset(G, ctx) {
     G.kingBonusApplied = false;
     G.targets = fresh.targets;
     G.targetSeq = fresh.targetSeq;
+    G.equipment = fresh.equipment;
     playOrder.forEach(player => drawCards(G, ctx, player, 4));
 }
 
@@ -296,12 +375,15 @@ export const SanGuoSha = {
                             draw,
                             play,
                             playTargeted,
+                            equipByCardId,
+                            unequip,
                             pickUp,
                             dismantle,
                             steal,
                             // 以下按玩家独立的操作忽略过期 stateID，避免多人同时操作时被拒
                             setImage: { move: setImage, ignoreStaleStateID: true },
                             setMaxHealth: { move: setMaxHealth, ignoreStaleStateID: true },
+                            setHealth: { move: setHealth, ignoreStaleStateID: true },
                             updateHealth: { move: updateHealth, ignoreStaleStateID: true },
                             ready: { move: ready, ignoreStaleStateID: true },
                             revealKingAndHandTurn,

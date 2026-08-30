@@ -105,6 +105,198 @@ img {
     pointer-events: none;
 }
 
+/* 自己的 HP 标签可点击，点击后弹出编辑框 */
+.hp-label-editable {
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.hp-label-editable:hover {
+    outline: 2px solid orange;
+}
+
+/* HP 编辑弹窗（点击 HP 标签弹出，平时不占用棋盘位置） */
+.hp-editor-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.hp-editor {
+    background-color: #2B1A15;
+    border: 2px solid #ffd700;
+    border-radius: 12px;
+    padding: 18px 22px;
+    box-shadow: 0 0 24px rgba(255, 215, 0, 0.4);
+}
+
+.hp-editor-title {
+    color: #ffd700;
+    font-size: 18px;
+    font-weight: bold;
+    text-align: center;
+    margin-bottom: 12px;
+}
+
+.hp-editor-row {
+    display: flex;
+    gap: 14px;
+    justify-content: center;
+    margin-bottom: 14px;
+}
+
+.hp-editor-field {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.hp-editor-label {
+    color: #ddd;
+    font-size: 13px;
+    margin-bottom: 4px;
+}
+
+/* 输入框加大，方便点按 */
+.hp-editor-input {
+    width: 110px;
+    height: 44px;
+    font-size: 22px;
+    text-align: center;
+    border-radius: 8px;
+    border: 2px solid #888;
+    background-color: #111;
+    color: white;
+    box-sizing: border-box;
+}
+
+.hp-editor-input:focus {
+    outline: 2px solid orange;
+    border-color: orange;
+}
+
+.hp-editor-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+.hp-editor-btn {
+    width: 90px;
+    height: 38px;
+    font-size: 16px;
+    border-radius: 8px;
+    border: none;
+    color: white;
+    cursor: pointer;
+}
+
+.hp-editor-ok {
+    background-color: rgba(0, 128, 0, 0.9);
+}
+
+.hp-editor-ok:hover {
+    background-color: rgba(0, 160, 0, 1);
+}
+
+.hp-editor-cancel {
+    background-color: rgba(120, 120, 120, 0.9);
+}
+
+.hp-editor-cancel:hover {
+    background-color: rgba(150, 150, 150, 1);
+}
+
+/* 装备栏 */
+.equip-slot {
+    position: absolute;
+    background-color: rgba(0, 0, 0, 0.55);
+    border: 1px dashed #888;
+    border-radius: 4px;
+    box-sizing: border-box;
+    overflow: hidden;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.equip-slot.equip-filled {
+    border-style: solid;
+    border-color: #c8a24a;
+}
+
+/* 自己的装备栏可拖入，高亮提示 */
+.equip-slot.equip-self {
+    border-color: #5a7fc8;
+}
+
+.equip-slot.equip-self.equip-filled {
+    border-color: #c8a24a;
+}
+
+.equip-placeholder {
+    color: #999;
+    font-size: 12px;
+    text-align: center;
+    line-height: 1.2;
+    padding: 2px;
+    user-select: none;
+    pointer-events: none;
+}
+
+.equip-card {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    cursor: default;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(20, 20, 20, 0.7);
+}
+
+.equip-slot.equip-self .equip-card {
+    cursor: pointer;
+}
+
+.equip-slot.equip-self .equip-card:hover {
+    outline: 2px solid orange;
+}
+
+.equip-card-img {
+    max-width: 82%;
+    max-height: 82%;
+    object-fit: contain;
+    user-select: none;
+    pointer-events: none;
+}
+
+.equip-card-name {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background-color: rgba(0, 0, 0, 0.75);
+    color: #ffd27f;
+    font-size: 10px;
+    text-align: center;
+    line-height: 1.2;
+    padding: 1px 0;
+    box-sizing: border-box;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+
 /* 生命分段（策划 §1.1）：>50% 健康 / 25~50% 受伤 / ≤25% 重伤 */
 .hp-label.health-ok {
     background-color: rgba(0, 120, 0, 0.75);

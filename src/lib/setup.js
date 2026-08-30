@@ -178,6 +178,8 @@ export default function setup(ctx, setupData) {
 
     const hands = Object.fromEntries(playOrder.map(player => [player, []]));
     const healths = Object.fromEntries(playOrder.map(player => [player, { max: 3, current: 3 }]));
+    // 装备栏：武器 / 护甲 / 防御马(+1) / 进攻马(-1)，槽内为卡牌对象或 undefined
+    const equipment = Object.fromEntries(playOrder.map(player => [player, { weapon: undefined, armor: undefined, defHorse: undefined, offHorse: undefined }]));
     const playerImages = Object.fromEntries(playOrder.map(player => [player, undefined]));
     const ready = Object.fromEntries(playOrder.map(player => [player, false]));
     const roles = {};
@@ -193,6 +195,7 @@ export default function setup(ctx, setupData) {
         discard,
         hands,
         healths,
+        equipment,
         playerImages,
         ready,
         roles,

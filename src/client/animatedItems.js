@@ -26,6 +26,9 @@ export default props => {
                 key={item.key}
                 className={classNames('positioned', { 'selectable': item.onClick !== undefined })}
                 onClick={item.onClick}
+                draggable={item.draggable || undefined}
+                onDragStart={item.onDragStart}
+                onDragEnd={item.onDragEnd}
             >
                 {child}
             </div>;
