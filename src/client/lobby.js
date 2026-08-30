@@ -185,7 +185,7 @@ export default class SanGuoShaLobby extends React.Component {
             rows.push(
                 <tr key={i}>
                     <td>{`座位 ${i + 1}`}</td>
-                    <td>{occupied ? player.name : '空位'}</td>
+                    <td>{occupied ? `${player.name}（${player.isConnected ? '在线' : '离线'}）` : '空位'}</td>
                     <td>{button}</td>
                 </tr>
             );
@@ -195,7 +195,7 @@ export default class SanGuoShaLobby extends React.Component {
                 <tbody>
                     <tr>
                         <th>{'座位'}</th>
-                        <th>{'玩家'}</th>
+                        <th>{'玩家（在线状态）'}</th>
                         <th></th>
                     </tr>
                     {rows}
@@ -206,9 +206,15 @@ export default class SanGuoShaLobby extends React.Component {
 
     joinSeat = async (playerID) => {
         const { match } = this.state;
-        await this.joinMatch(match.matchID, playerID.toString());
-        this.setState({ inGame: true });
-        this.refreshLobbyState();
+        try {
+            await this.joinMatch(match.matchID, playerID.toString());
+            this.setState({ inGame: true });
+            this.refreshLobbyState();
+        } catch (e) {
+            // 座位已被占用（如并发加入或离线残留）时，刷新座位列表并提示
+            alert(`加入失败：${e.message || '未知错误'}，正在刷新座位…`);
+            this.refreshLobbyState();
+        }
     }
 
     joinAsGM = () => {
@@ -226,18 +232,23 @@ export default class SanGuoShaLobby extends React.Component {
 
     joinMatch = async (matchID, playerID) => {
         const { name } = this.state;
-        const { playerCredentials } = await this.lobbyClient.joinMatch(
-            SanGuoSha.name,
-            matchID,
-            {
-                playerID,
-                playerName: name,
-            },
-        );
+        // 走服务端串行化的加入接口，避免并发加入丢更新/409
+        const url = `${SERVER}/api/join?matchID=${encodeURIComponent(matchID)}`
+            + `&playerID=${encodeURIComponent(playerID)}&playerName=${encodeURIComponent(name)}`;
+        const res = await fetch(url, { method: 'POST' });
+        let data = {};
+        try {
+            data = await res.json();
+        } catch (e) {
+            // 响应非 JSON，按状态码处理
+        }
+        if (!res.ok || !data.playerCredentials) {
+            throw new Error(data.error || `加入失败（${res.status}）`);
+        }
         const matchInfo = {
             matchID,
             playerID,
-            credentials: playerCredentials,
+            credentials: data.playerCredentials,
         };
         window.sessionStorage.setItem(MATCH_INFO_KEY, JSON.stringify(matchInfo));
         this.setState({ matchInfo });

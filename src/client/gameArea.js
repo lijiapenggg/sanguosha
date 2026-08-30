@@ -65,7 +65,7 @@ export default class GameArea extends React.Component {
             const player = playOrder[playerIndex];
             const isMe = player === playerID;
 
-            this.addPlayerName(playerArea, playerIndex, player, nodes, isGM);
+            this.addPlayerName(playerArea, playerIndex, player, nodes);
             this.addPlayerImage(playerArea, player, isMe, characterCards);
             this.addHealth(playerArea, player, isMe, nodes);
             this.addRoleBadge(playerArea, player, isMe, nodes);
@@ -124,6 +124,21 @@ export default class GameArea extends React.Component {
             </div>
             {dealButton}
             <button
+                className='gm-kick'
+                onClick={async () => {
+                    if (window.confirm('确认清空所有玩家？\n所有座位将被释放，对局一并重置（玩家需重新就位、GM 重新发身份牌）。')) {
+                        try {
+                            await fetch(`/api/gm/clear-players?matchID=${encodeURIComponent(this.props.matchID)}`, { method: 'POST' });
+                        } catch (e) {
+                            // 座位清空失败不阻塞对局重置
+                        }
+                        moves.gmReset();
+                    }
+                }}
+            >
+                {'清空玩家（释放所有座位）'}
+            </button>
+            <button
                 className='gm-reset'
                 onClick={() => {
                     if (window.confirm('确认清空房间、重新开局？\n将清空所有手牌与弃牌、重新洗牌、体力回满（保留玩家图片与体力上限）。')) {
@@ -136,10 +151,10 @@ export default class GameArea extends React.Component {
         </div>;
     }
 
-    addPlayerName(playerArea, playerIndex, player, nodes, showAll) {
-        const { ctx, playerID, matchData, scaledWidth, scaledHeight } = this.props;
+    addPlayerName(playerArea, playerIndex, player, nodes) {
+        const { ctx, matchData, scaledWidth, scaledHeight } = this.props;
         const { currentPlayer } = ctx;
-        if (matchData !== undefined && (showAll || player !== playerID)) {
+        if (matchData !== undefined) {
             nodes.push(<div
                 key={`name-${playerIndex}`}
                 className={classNames('positioned player-name', { 'current-player': currentPlayer === player })}

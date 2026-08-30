@@ -202,6 +202,22 @@ img {
     background-color: rgba(0, 128, 0, 1);
 }
 
+/* GM 清空玩家按钮 */
+.gm-kick {
+    background-color: rgba(200, 100, 0, 0.9);
+    border: 1px solid #fff;
+    border-radius: 8px;
+    color: white;
+    font-size: 14px;
+    padding: 6px 14px;
+    cursor: pointer;
+    margin-bottom: 8px;
+}
+
+.gm-kick:hover {
+    background-color: rgba(200, 100, 0, 1);
+}
+
 /* 卡牌指向箭头层（不拦截点击） */
 .target-overlay {
     position: absolute;

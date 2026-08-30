@@ -292,6 +292,31 @@ check('弃1张到2 ≤ 上限2 → 回合结束（证明重伤段上限=2=1+主�
     stK2.ctx.currentPlayer !== king2 && stK2.G.hands[king2].length === 2,
     { hand: stK2.G.hands[king2].length, currentPlayer: stK2.ctx.currentPlayer });
 
+console.log('== 15. 并发加入（修复 409/丢更新）与 GM 清空玩家 ==');
+// 新开一个非 singleton 房间做并发测试，避免影响主房间
+const { matchID: m2 } = await lobby.createMatch(SanGuoSha.name, { numPlayers: 5, setupData: { singleton: false } });
+const joinResults = await Promise.allSettled([0, 1, 2, 3, 4].map(i =>
+    fetch(`${SERVER}/api/join?matchID=${encodeURIComponent(m2)}&playerID=${encodeURIComponent(String(i))}&playerName=${encodeURIComponent('并发' + i)}`, { method: 'POST' })
+        .then(r => r.json())
+));
+check('5 个并发加入全部成功（无 409）',
+    joinResults.every(r => r.status === 'fulfilled' && r.value && r.value.status === 200),
+    joinResults.map(r => (r.status === 'fulfilled' && r.value) ? r.value.status : 'rejected'));
+let { matches: matches2 } = await lobby.listMatches(SanGuoSha.name);
+const m2info = matches2.find(x => x.matchID === m2);
+check('并发后 5 个座位全部正确占用（无丢更新）',
+    m2info !== undefined && m2info.players.every((p, i) => p.name === '并发' + i),
+    m2info && m2info.players.map(p => p.name));
+// GM 清空玩家
+const clearRes = await fetch(`${SERVER}/api/gm/clear-players?matchID=${encodeURIComponent(m2)}`, { method: 'POST' });
+check('清空玩家接口成功', clearRes.status === 200);
+({ matches: matches2 } = await lobby.listMatches(SanGuoSha.name));
+const m2after = matches2.find(x => x.matchID === m2);
+check('清空后 5 个座位全部释放', m2after !== undefined && m2after.players.every(p => p.name === undefined), m2after && m2after.players.map(p => p.name));
+// 清空后仍可再次加入（座位可复用）
+const rejoined = await fetch(`${SERVER}/api/join?matchID=${encodeURIComponent(m2)}&playerID=${encodeURIComponent('0')}&playerName=${encodeURIComponent('重进')}`, { method: 'POST' }).then(r => r.json());
+check('清空后座位可重新加入', rejoined.status === 200, rejoined);
+
 for (const c of clients) {
     c.stop();
 }
