@@ -441,7 +441,7 @@ export default class GameArea extends React.Component {
         </div>;
     }
 
-    // 装备栏：头像下方横排 4 格（武器 / 护甲 / 防御马 / 进攻马）
+    // 装备栏：自己的竖排在头像左侧（4 格），其他人的横排在头像下方
     // 装备牌对所有人明牌（含 GM）；只有本人可拖入/拖出
     addEquipment(playerArea, player, isMe, nodes) {
         const { G, moves, scaledWidth, scaledHeight } = this.props;
@@ -452,20 +452,31 @@ export default class GameArea extends React.Component {
         const slotWidth = scaledWidth * 0.34;
         const slotHeight = scaledHeight * 0.14;
         const gap = 3;
-        const totalWidth = slotWidth * EQUIP_SLOT_ORDER.length + gap * (EQUIP_SLOT_ORDER.length - 1);
-        const startX = playerArea.x + (scaledWidth - totalWidth) / 2;
-        const top = playerArea.y + scaledHeight + INFO_DELTA + scaledHeight * 0.2 + 4;
+        let left, top, dx, dy;
+        if (isMe) {
+            // 自己的头像在右下角：装备栏竖排到头像左侧（不超出屏幕、不被底部手牌区遮挡）
+            const totalHeight = slotHeight * EQUIP_SLOT_ORDER.length + gap * (EQUIP_SLOT_ORDER.length - 1);
+            left = playerArea.x - slotWidth - 6;
+            top = playerArea.y + (scaledHeight - totalHeight) / 2;
+            dx = 0;
+            dy = slotHeight + gap;
+        } else {
+            const totalWidth = slotWidth * EQUIP_SLOT_ORDER.length + gap * (EQUIP_SLOT_ORDER.length - 1);
+            left = playerArea.x + (scaledWidth - totalWidth) / 2;
+            top = playerArea.y + scaledHeight + INFO_DELTA + scaledHeight * 0.2 + 4;
+            dx = slotWidth + gap;
+            dy = 0;
+        }
 
         EQUIP_SLOT_ORDER.forEach((slot, i) => {
             const card = eq[slot];
-            const left = startX + (slotWidth + gap) * i;
             const draggable = isMe && card !== undefined;
             nodes.push(<div
                 key={`eq-${player}-${slot}`}
                 className={classNames('positioned equip-slot', { 'equip-filled': card !== undefined, 'equip-self': isMe })}
                 style={{
-                    left,
-                    top,
+                    left: left + dx * i,
+                    top: top + dy * i,
                     width: slotWidth,
                     height: slotHeight,
                 }}
