@@ -562,20 +562,24 @@ export default class GameArea extends React.Component {
             return;
         }
         const { G, moves, scaledWidth, scaledHeight } = this.props;
-        // 按钮放在头像框内左下角（自己视角此处无遮挡；头像下方是手牌区会挡）
-        const btnWidth = scaledWidth * 0.22;
-        const btnHeight = scaledHeight * 0.07;
-        const btnLeft = playerArea.x + INFO_DELTA;
-        const rowTop = playerArea.y + scaledHeight * 0.78;
+        // 按钮放在自己头像左侧装备栏的正下方（放大、易点按）
+        const slotWidth = scaledWidth * 0.34;
+        const slotHeight = scaledHeight * 0.14;
+        const gap = 3;
+        const totalHeight = slotHeight * EQUIP_SLOT_ORDER.length + gap * (EQUIP_SLOT_ORDER.length - 1);
+        const btnWidth = scaledWidth * 0.32;
+        const btnHeight = scaledHeight * 0.09;
+        const btnLeft = playerArea.x - slotWidth - 6;
+        const btnTop = playerArea.y + (scaledHeight + totalHeight) / 2 + 6;
         nodes.push(<button
             key='btn-tapped'
             className='positioned state-btn'
             style={{
                 left: btnLeft,
-                top: rowTop,
+                top: btnTop,
                 width: btnWidth,
                 height: btnHeight,
-                fontSize: scaledHeight * 0.045,
+                fontSize: scaledHeight * 0.055,
             }}
             onClick={() => moves.toggleTapped()}
         >
@@ -585,11 +589,11 @@ export default class GameArea extends React.Component {
             key='btn-facedown'
             className='positioned state-btn'
             style={{
-                left: btnLeft + btnWidth + INFO_DELTA,
-                top: rowTop,
+                left: btnLeft + btnWidth + 4,
+                top: btnTop,
                 width: btnWidth,
                 height: btnHeight,
-                fontSize: scaledHeight * 0.045,
+                fontSize: scaledHeight * 0.055,
             }}
             onClick={() => moves.toggleFaceDown()}
         >

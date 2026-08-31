@@ -31,7 +31,9 @@ export default class AnimatedBoard extends React.Component {
                 clickable={true}
                 animated={(item, props) => {
                     const { opacity, left, top, rotate, facedown } = props;
-                    if (item.placeholderText !== undefined) {
+                    const isFacedown = item.facedown ? 1 : 0;
+                    // 翻面：显示武将牌背面图（无论是否上传头像）
+                    if (item.placeholderText !== undefined && !isFacedown) {
                         return <animated.div
                             className='positioned item image-placeholder'
                             style={{
@@ -66,16 +68,13 @@ export default class AnimatedBoard extends React.Component {
                     >
                         <animated.img
                             className='fill'
-                            src={facedown.interpolate(f => f > 0.5 ? './cards/Card Back.jpg' : (item.src || ''))}
+                            src={facedown.interpolate(f => f > 0.5 ? './cards/wujiangBack.jpg' : (item.src || ''))}
                             alt='player image'
                             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                         />
-                        {item.src ? <animated.div
-                            className='facedown-badge'
-                            style={{ opacity: facedown }}
-                        >
+                        {isFacedown ? <div className='facedown-badge'>
                             {'背面'}
-                        </animated.div> : undefined}
+                        </div> : undefined}
                     </animated.div>;
                 }}
             />
