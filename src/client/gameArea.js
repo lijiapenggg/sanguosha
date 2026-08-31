@@ -75,9 +75,15 @@ export default class GameArea extends React.Component {
         };
     }
 
-    componentDidUpdate() {
+    componentDidUpdate(prevProps) {
         const { G, ctx, events, moves } = this.props;
         window.sanguosha = { G, ctx, events, moves };
+        // 进入弃牌阶段时自动切回默认模式：弃牌阶段不需要指向（拆/偷/选目标），点牌即弃
+        const prevStage = prevProps.ctx && prevProps.ctx.activePlayers && prevProps.ctx.activePlayers[this.props.playerID];
+        const curStage = ctx && ctx.activePlayers && ctx.activePlayers[this.props.playerID];
+        if (curStage === 'discard' && prevStage !== 'discard' && this.state.mode !== SetModePanel.DEFAULT_MODE) {
+            this.setState({ mode: SetModePanel.DEFAULT_MODE });
+        }
     }
 
     render() {
@@ -98,8 +104,9 @@ export default class GameArea extends React.Component {
             this.addPlayerName(playerArea, playerIndex, player, nodes);
             this.addPlayerImage(playerArea, player, isMe, characterCards);
             this.addHealth(playerArea, player, isMe, nodes);
+            this.addPlayerStateButtons(playerArea, player, isMe, nodes);
             this.addEquipment(playerArea, player, isMe, nodes);
-            this.addJudgmentArea(playerArea, player, nodes);
+            this.addJudgmentArea(playerArea, player, isMe, nodes);
             this.addRoleBadge(playerArea, player, isMe, nodes);
             if (player === currentPlayer) {
                 // 当前回合玩家：金色框框高亮（所有人可见，含 GM）
@@ -138,6 +145,7 @@ export default class GameArea extends React.Component {
             />
             {nodes}
             {this.renderTargetArrows()}
+            {this.renderJudgeControls()}
             {this.renderActionButton()}
             {this.renderSetModePanel()}
             {this.renderGMActions()}
@@ -281,6 +289,8 @@ export default class GameArea extends React.Component {
             top: playerArea.y,
             width: scaledWidth,
             height: scaledHeight,
+            rotate: G.tapped && G.tapped[player] ? 1 : 0,
+            facedown: G.facedown && G.facedown[player] ? 1 : 0,
             onClick,
         });
     }
@@ -546,10 +556,51 @@ export default class GameArea extends React.Component {
         }
     };
 
+    // 横置 / 翻面按钮（仅自己可见，点头像下方）：点击切换状态
+    addPlayerStateButtons(playerArea, player, isMe, nodes) {
+        if (!isMe) {
+            return;
+        }
+        const { G, moves, scaledWidth, scaledHeight } = this.props;
+        const btnWidth = scaledWidth * 0.26;
+        const btnHeight = scaledHeight * 0.07;
+        const rowTop = playerArea.y + scaledHeight + INFO_DELTA + scaledHeight * 0.2 + 2;
+        const btnLeft = playerArea.x + (scaledWidth - btnWidth * 2 - INFO_DELTA) / 2;
+        nodes.push(<button
+            key='btn-tapped'
+            className='positioned state-btn'
+            style={{
+                left: btnLeft,
+                top: rowTop,
+                width: btnWidth,
+                height: btnHeight,
+                fontSize: scaledHeight * 0.045,
+            }}
+            onClick={() => moves.toggleTapped()}
+        >
+            {G.tapped && G.tapped[player] ? '竖回' : '横置'}
+        </button>);
+        nodes.push(<button
+            key='btn-facedown'
+            className='positioned state-btn'
+            style={{
+                left: btnLeft + btnWidth + INFO_DELTA,
+                top: rowTop,
+                width: btnWidth,
+                height: btnHeight,
+                fontSize: scaledHeight * 0.045,
+            }}
+            onClick={() => moves.toggleFaceDown()}
+        >
+            {G.facedown && G.facedown[player] ? '翻回' : '翻面'}
+        </button>);
+    }
+
     // 判定区：乐不思蜀/兵粮寸断/闪电等延迟锦囊，可重复堆叠，全桌明牌（含 GM）。
-    // 显示在头像框内底部右侧（避开左下角的手牌缩略图），最多叠 3 张，超出显示 +N
-    addJudgmentArea(playerArea, player, nodes) {
-        const { G, scaledWidth, scaledHeight } = this.props;
+    // 显示在头像框内底部右侧（避开左下角的手牌缩略图），最多叠 3 张，超出显示 +N；
+    // 自己点击判定牌可拿回手牌
+    addJudgmentArea(playerArea, player, isMe, nodes) {
+        const { G, moves, scaledWidth, scaledHeight } = this.props;
         const jg = G.judgment && G.judgment[player];
         if (!jg) {
             return;
@@ -572,11 +623,13 @@ export default class GameArea extends React.Component {
         >
             {shown.length === 0
                 ? <div className='judgment-empty'>{'判定区'}</div>
-                : shown.map(card => (
+                : shown.map((card, i) => (
                     <div
                         key={`jgc-${card.id}`}
-                        className='judgment-card'
+                        className={classNames('judgment-card', { 'judgment-card-takeable': isMe })}
                         style={{ width: slotW, height: slotH }}
+                        onClick={isMe ? (() => moves.takeJudgment(jg.length - shown.length + i)) : undefined}
+                        title={isMe ? '点击拿回手牌' : undefined}
                     >
                         <img className='judgment-card-img' src={`./cards/${card.type}.jpg`} alt={card.type} draggable={false} />
                         <div className='judgment-card-name'>{CARD_CN[card.type] || card.type}</div>
@@ -681,6 +734,52 @@ export default class GameArea extends React.Component {
         >
             {lines}
         </svg>;
+    }
+
+    // 判定按钮（牌堆旁，所有玩家可见可点）：翻开牌堆最上面一张牌并弃掉；
+    // 同时展示最近一次判定的结果（全桌可见）
+    renderJudgeControls() {
+        const { G, moves, playerID, width, height, scaledWidth, scaledHeight } = this.props;
+        const { rolesDealt } = G;
+        if (playerID === '-1' || !rolesDealt) {
+            return undefined;
+        }
+        // 与 addDeck 相同的中心布局：弃牌堆固定宽度居中，牌堆在其左侧
+        const deckW = scaledWidth * DECK_RATIO;
+        const discardFixedW = 4 * scaledWidth * MIDDLE_CARD_RATIO + 3 * DELTA;
+        const discardStartX = (width - discardFixedW) / 2;
+        const deckLeft = discardStartX - deckW - DELTA;
+        const btnW = 64;
+        const btnH = 26;
+        const btnLeft = deckLeft + deckW / 2 - btnW / 2;
+        const btnTop = (height - scaledHeight * DECK_RATIO) / 2 - btnH - 8;
+        const lastJudged = G.lastJudged;
+        return <div className='judge-controls'>
+            <button
+                className='judge-btn'
+                style={{
+                    position: 'absolute',
+                    left: btnLeft,
+                    top: btnTop,
+                    width: btnW,
+                    height: btnH,
+                }}
+                onClick={() => moves.judge()}
+            >
+                {'判定'}
+            </button>
+            {lastJudged && lastJudged.card ? <div
+                className='judge-result'
+                style={{
+                    position: 'absolute',
+                    left: deckLeft + deckW / 2 - 100,
+                    top: btnTop - 24,
+                    width: 200,
+                }}
+            >
+                {`判定：${CARD_CN[lastJudged.card.type] || lastJudged.card.type}`}
+            </div> : undefined}
+        </div>;
     }
 
     addOtherPlayerHand(playerArea, player, normalCards, nodes, showFaces) {
@@ -892,9 +991,14 @@ export default class GameArea extends React.Component {
                 onClick: () => moves.endPlay(),
             }
         } else if (this.stage() === 'discard') {
+            // 弃牌阶段：点击手牌可直接弃掉（不需要指向）；弃至不超过上限后自动结束回合，
+            // 不想弃也可以直接点"结束回合"
+            const handCount = G.hands && G.hands[playerID] ? G.hands[playerID].length : 0;
+            const limit = this.handLimitOfFor(playerID, G);
             actionButton = {
-                text: '弃牌（需弃至不超过体力值）',
-                type: 'disabled',
+                text: handCount > limit ? `弃牌阶段（还需弃 ${handCount - limit} 张）` : '弃牌阶段：点此结束回合',
+                type: handCount > limit ? 'disabled' : 'selectable',
+                onClick: handCount > limit ? undefined : () => moves.finishDiscard(),
             };
         }
         if (actionButton !== undefined) {
@@ -952,9 +1056,18 @@ export default class GameArea extends React.Component {
                         const data = await res.json();
                         if (res.ok && data.url) {
                             this.props.moves.setImage(data.url);
+                        } else {
+                            throw new Error(data.error || '上传失败');
                         }
                     } catch (err) {
-                        // 上传失败：不阻塞
+                        // 上传失败：回退为 base64 直存（图片仍能显示，只是占用更多带宽），并提示用户
+                        try {
+                            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                            this.props.moves.setImage(dataUrl);
+                            window.alert('图片上传服务器失败，已改用本地图片（可能影响其他玩家加载速度）');
+                        } catch (e2) {
+                            window.alert('图片上传失败：' + (err && err.message ? err.message : '未知错误'));
+                        }
                     }
                     this.setState({ uploadTarget: undefined });
                 }, 'image/jpeg', 0.85);
@@ -987,6 +1100,20 @@ export default class GameArea extends React.Component {
         }
         // 拆牌/偷牌只针对其他玩家的手牌，自己的牌在 DEFAULT 模式下直接打出
         return undefined;
+    }
+
+    // 手牌上限随生命分段动态变化（健康4/受伤2/重伤1，主公+1）——与 addHealth 展示一致
+    handLimitOfFor(playerID, G) {
+        const h = G.healths && G.healths[playerID];
+        if (!h || h.max <= 0) {
+            return 1;
+        }
+        const ratio = h.current / h.max;
+        let limit = ratio > 0.5 ? 4 : (ratio > 0.25 ? 2 : 1);
+        if (G.roles && G.roles[playerID] === 'King') {
+            limit += 1;
+        }
+        return limit;
     }
 
     stage() {

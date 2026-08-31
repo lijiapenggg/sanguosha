@@ -297,6 +297,67 @@ img {
     pointer-events: none;
 }
 
+/* 横置 / 翻面状态按钮（自己头像下方） */
+.state-btn {
+    background-color: rgba(60, 60, 60, 0.85);
+    border: 1px solid #999;
+    border-radius: 4px;
+    color: white;
+    padding: 0;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 30;
+}
+
+.state-btn:hover {
+    background-color: rgba(120, 120, 120, 0.9);
+}
+
+/* 判定按钮与结果 */
+.judge-btn {
+    background-color: rgba(120, 40, 160, 0.9);
+    border: 1px solid #fff;
+    border-radius: 6px;
+    color: white;
+    font-size: 14px;
+    padding: 0;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 30;
+}
+
+.judge-btn:hover {
+    background-color: rgba(150, 60, 200, 1);
+}
+
+.judge-result {
+    background-color: rgba(0, 0, 0, 0.7);
+    color: #e0b0ff;
+    border-radius: 4px;
+    font-size: 13px;
+    text-align: center;
+    padding: 2px 6px;
+    box-sizing: border-box;
+    pointer-events: none;
+    z-index: 30;
+}
+
+/* 武将牌背面徽章（翻面时叠加） */
+.facedown-badge {
+    position: absolute;
+    bottom: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(0, 0, 0, 0.75);
+    color: #ffd700;
+    border: 1px solid #ffd700;
+    border-radius: 4px;
+    font-size: 12px;
+    padding: 1px 8px;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
 /* 判定区：乐不思蜀/兵粮寸断/闪电等延迟锦囊，可重复堆叠，全桌明牌 */
 .judgment-container {
     position: absolute;
@@ -360,6 +421,15 @@ img {
     overflow: hidden;
     text-overflow: ellipsis;
     pointer-events: none;
+}
+
+/* 自己的判定牌可点击拿回手牌 */
+.judgment-card-takeable {
+    cursor: pointer;
+}
+
+.judgment-card-takeable:hover {
+    outline: 2px solid orange;
 }
 
 .judgment-more {

@@ -110,8 +110,10 @@ server.app.use(async (ctx, next) => {
         })(ctx, async () => {
             try {
                 const file = ctx.request.files && ctx.request.files.image;
+                // formidable 1.x 用 file.path，2.x 用 file.filepath，兼容两者
+                const tmpPath = file && (file.path || file.filepath);
                 const { matchID, playerID } = ctx.request.body || {};
-                if (!file || !file.path || !matchID || playerID === undefined) {
+                if (!file || !tmpPath || !matchID || playerID === undefined) {
                     ctx.status = 400;
                     ctx.body = { error: '缺少文件或参数' };
                     return;
@@ -120,16 +122,16 @@ server.app.use(async (ctx, next) => {
                 fs.mkdirSync(uploadsDir, { recursive: true });
                 const dest = path.join(uploadsDir, filename);
                 // 跨盘符不能 rename（formidable 临时文件在系统 Temp），用复制+删除
-                fs.copyFileSync(file.path, dest);
+                fs.copyFileSync(tmpPath, dest);
                 try {
-                    fs.unlinkSync(file.path);
+                    fs.unlinkSync(tmpPath);
                 } catch (e) {
                     // 临时文件清理失败可忽略
                 }
                 ctx.body = { url: `/uploads/${filename}` };
             } catch (e) {
                 ctx.status = 500;
-                ctx.body = { error: e.message || String(e) };
+                ctx.body = { error: `上传失败: ${e.message || String(e)}` };
             }
         });
     }
@@ -159,3 +161,57 @@ setInterval(() => {
         }
     });
 }, week);
+
+// 孤儿上传图片清理：玩家离开房间/离线超 1 小时后，其上传的图片如未被任何房间引用则删除
+const ORPHAN_IMAGE_TTL = 60 * 60 * 1000; // 1 小时
+async function cleanupOrphanUploads() {
+    try {
+        if (!fs.existsSync(uploadsDir)) {
+            return;
+        }
+        // 收集所有房间当前仍在引用的图片 URL
+        const referenced = new Set();
+        try {
+            const matchIDs = await db.listMatches();
+            for (const matchID of matchIDs) {
+                try {
+                    const { state } = await db.fetch(matchID);
+                    const images = state && state.G && state.G.playerImages;
+                    if (images) {
+                        for (const url of Object.values(images)) {
+                            if (typeof url === 'string' && url.startsWith('/uploads/')) {
+                                referenced.add(url);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // 单个房间读取失败不影响清理
+                }
+            }
+        } catch (e) {
+            // listMatches 失败则跳过本次清理
+        }
+        const now = Date.now();
+        const files = fs.readdirSync(uploadsDir);
+        for (const name of files) {
+            if (referenced.has(`/uploads/${name}`)) {
+                continue; // 仍被引用，保留
+            }
+            const full = path.join(uploadsDir, name);
+            try {
+                const stat = fs.statSync(full);
+                if (now - stat.mtimeMs > ORPHAN_IMAGE_TTL) {
+                    fs.unlinkSync(full);
+                }
+            } catch (e) {
+                // 单文件删除失败可忽略
+            }
+        }
+    } catch (e) {
+        // 清理失败不影响服务器运行
+    }
+}
+// 每 10 分钟清理一次
+setInterval(cleanupOrphanUploads, 10 * 60 * 1000);
+// 启动时先跑一次
+setTimeout(cleanupOrphanUploads, 60 * 1000);

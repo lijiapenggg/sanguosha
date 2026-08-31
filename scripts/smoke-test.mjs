@@ -5,7 +5,7 @@
  */
 import { LobbyClient, Client } from 'boardgame.io/dist/cjs/client.js';
 import { SocketIO } from 'boardgame.io/dist/cjs/multiplayer.js';
-import { SanGuoSha, TARGETED_CARDS, WEAPON_TYPES, ARMOR_TYPES, OFFENSIVE_HORSE_TYPES, DEFENSIVE_HORSE_TYPES, equipSlotOf, JUDGMENT_CARDS } from '../src/lib/game.js';
+import { SanGuoSha, TARGETED_CARDS, WEAPON_TYPES, ARMOR_TYPES, OFFENSIVE_HORSE_TYPES, DEFENSIVE_HORSE_TYPES, equipSlotOf, JUDGMENT_CARDS, handLimitOf } from '../src/lib/game.js';
 
 const SERVER = 'http://localhost:8098';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -30,6 +30,25 @@ async function waitForState(client, pred, timeoutMs = 8000) {
         await sleep(100);
     }
     throw new Error('timeout waiting for state');
+}
+
+// 当前玩家走完"结束出牌 → 弃牌阶段 → 结束回合"：弃至上限以内后结束（或直接结束）
+async function endTurn(client, playerID) {
+    client.moves.endPlay();
+    await waitForState(client, st => st.ctx.activePlayers && st.ctx.activePlayers[playerID] === 'discard');
+    // 手牌超过上限则先弃牌（直接点牌即弃，不需要指向）
+    let st = client.getState();
+    let guard = 0;
+    while (st.G.hands[playerID].length > handLimitOf(st.G, playerID) && guard < 30) {
+        client.moves.discardCard(0);
+        await waitForState(client, s => s.G.hands[playerID].length < st.G.hands[playerID].length);
+        st = client.getState();
+        guard++;
+    }
+    if (client.getState().ctx.currentPlayer === playerID) {
+        client.moves.finishDiscard();
+    }
+    await waitForState(client, s => s.ctx.currentPlayer !== playerID);
 }
 
 const lobby = new LobbyClient({ server: SERVER });
@@ -306,12 +325,11 @@ const stK1 = kingClient.getState();
 check('弃1张到3 ≤ 上限3 → 回合结束（证明受伤段上限=3=2+主公1）',
     stK1.ctx.currentPlayer !== king2 && stK1.G.hands[king2].length === 3,
     { hand: stK1.G.hands[king2].length, currentPlayer: stK1.ctx.currentPlayer });
-// 场景B：重伤段（HP≤25%）。先把回合轮转回主公：其余玩家满血手牌4 ≤ 上限4 → 立即结束回合
+// 场景B：重伤段（HP≤25%）。先把回合轮转回主公：其余玩家满血手牌4 ≤ 上限4 → 结束回合
 for (let i = 0; i < 4; i++) {
     const cur = kingClient.getState().ctx.currentPlayer;
     const curClient = clients[parseInt(cur, 10)];
-    curClient.moves.endPlay();
-    await waitForState(curClient, st => st.ctx.currentPlayer !== cur);
+    await endTurn(curClient, cur);
 }
 check('回合已轮转回主公', kingClient.getState().ctx.currentPlayer === king2, kingClient.getState().ctx.currentPlayer);
 // 主公 16→10 → 10/40=25% ≤25% → 基础1+主公1=2；此时手牌 3
@@ -334,8 +352,7 @@ const order = [startP];
 for (let i = 0; i < 5; i++) {
     const cur = cgm.getState().ctx.currentPlayer;
     const curClient = clients[parseInt(cur, 10)];
-    curClient.moves.endPlay();
-    await waitForState(curClient, st => st.ctx.currentPlayer !== cur);
+    await endTurn(curClient, cur);
     order.push(cgm.getState().ctx.currentPlayer);
 }
 check('回合按顺序流转一圈（5 步回到起点，且无重复相邻）',
@@ -491,6 +508,73 @@ console.log('== 18. 判定区：乐不思蜀/兵粮寸断/闪电入目标玩家�
         } else {
             console.log('  跳过：手牌无第二张判定锦囊');
         }
+    }
+}
+
+console.log('== 19. 横置/翻面/判定/判定区取回/铁锁连环 ==');
+// 19a. 横置与翻面（toggleTapped / toggleFaceDown）
+{
+    const c0s = clients[0];
+    c0s.moves.toggleTapped();
+    await waitForState(cgm, st => st.G.tapped && st.G.tapped['0'] === true);
+    check('横置：玩家0 头像横置', cgm.getState().G.tapped['0'] === true, cgm.getState().G.tapped);
+    c0s.moves.toggleTapped();
+    await waitForState(cgm, st => st.G.tapped['0'] === false);
+    check('竖回：玩家0 头像竖回', cgm.getState().G.tapped['0'] === false, cgm.getState().G.tapped);
+    c0s.moves.toggleFaceDown();
+    await waitForState(cgm, st => st.G.facedown && st.G.facedown['0'] === true);
+    check('翻面：玩家0 头像翻面', cgm.getState().G.facedown['0'] === true, cgm.getState().G.facedown);
+    c0s.moves.toggleFaceDown();
+    await waitForState(cgm, st => st.G.facedown['0'] === false);
+    check('翻回：玩家0 头像翻回', cgm.getState().G.facedown['0'] === false, cgm.getState().G.facedown);
+}
+// 19b. 判定按钮（judge）：翻开牌堆顶并弃掉
+{
+    const c0s = clients[0];
+    const deckBefore = cgm.getState().G.deck.length;
+    const discardBefore = cgm.getState().G.discard.length;
+    c0s.moves.judge();
+    await waitForState(cgm, st => st.G.lastJudged !== undefined && st.G.discard.length === discardBefore + 1);
+    const stJ = cgm.getState();
+    check('判定：翻开一张牌并弃掉（牌堆 -1）', stJ.G.deck.length === deckBefore - 1, { deck: stJ.G.deck.length, before: deckBefore });
+    check('判定：牌进入弃牌堆（弃牌堆 +1）', stJ.G.discard.length === discardBefore + 1, { discard: stJ.G.discard.length, before: discardBefore });
+    check('判定：记录最近判定结果（明牌）', stJ.G.lastJudged && stJ.G.lastJudged.card && stJ.G.lastJudged.card.type !== undefined, stJ.G.lastJudged);
+}
+// 19c. 判定区取回（takeJudgment）：判定区有牌时拿回手牌
+{
+    const c1 = clients[1];
+    const c1j = cgm.getState().G.judgment['1'];
+    if (c1j && c1j.length > 0) {
+        const handBefore = cgm.getState().G.hands['1'].length;
+        c1.moves.takeJudgment(0);
+        await waitForState(cgm, st => st.G.judgment['1'].length === c1j.length - 1);
+        const stT = cgm.getState();
+        check('判定区取回：判定区 -1', stT.G.judgment['1'].length === c1j.length - 1, stT.G.judgment['1']);
+        check('判定区取回：手牌 +1', stT.G.hands['1'].length === handBefore + 1, { before: handBefore, after: stT.G.hands['1'].length });
+    } else {
+        console.log('  跳过：玩家1判定区无牌可拿回');
+    }
+}
+// 19d. 铁锁连环（Chains）：打出时横置目标玩家头像
+{
+    const c0s = clients[0];
+    const isChains = c => c.type === 'Chains';
+    let chIdx = c0s.getState().G.hands['0'].findIndex(isChains);
+    let guard = 0;
+    while (chIdx === -1 && guard < 60) {
+        const before = c0s.getState().G.hands['0'].length;
+        c0s.moves.draw();
+        await waitForState(c0s, st => st.G.hands['0'].length === before + 1);
+        chIdx = c0s.getState().G.hands['0'].findIndex(isChains);
+        guard++;
+    }
+    if (chIdx !== -1) {
+        const targetTappedBefore = cgm.getState().G.tapped['2'] === true;
+        c0s.moves.playTargeted(chIdx, '2');
+        await waitForState(cgm, st => st.G.tapped['2'] === !targetTappedBefore);
+        check('铁锁连环：目标玩家头像横置', cgm.getState().G.tapped['2'] === !targetTappedBefore, cgm.getState().G.tapped);
+    } else {
+        console.log('  跳过：手牌无铁锁连环');
     }
 }
 

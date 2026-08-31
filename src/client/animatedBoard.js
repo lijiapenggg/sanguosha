@@ -24,11 +24,13 @@ export default class AnimatedBoard extends React.Component {
                         opacity: item.opacity,
                         left: item.left,
                         top: item.top,
+                        rotate: item.rotate ? 1 : 0,
+                        facedown: item.facedown ? 1 : 0,
                     };
                 }}
                 clickable={true}
                 animated={(item, props) => {
-                    const { opacity, left, top } = props;
+                    const { opacity, left, top, rotate, facedown } = props;
                     if (item.placeholderText !== undefined) {
                         return <animated.div
                             className='positioned item image-placeholder'
@@ -38,22 +40,43 @@ export default class AnimatedBoard extends React.Component {
                                 top,
                                 width: item.width,
                                 height: item.height,
+                                transformOrigin: 'center center',
+                                transform: rotate.interpolate(r => `rotate(${r * 90}deg)`),
                             }}
                         >
                             {item.placeholderText}
                         </animated.div>;
                     }
-                    return <animated.img
+                    // 横置：以中心旋转 90°，交换宽高占位（中心不变）
+                    const rotLeft = interpolate([left, rotate], (l, r) => l + (item.width - item.height) / 2 * r);
+                    const rotTop = interpolate([top, rotate], (t, r) => t + (item.height - item.width) / 2 * r);
+                    const rotWidth = rotate.interpolate(r => item.width * (1 - r) + item.height * r);
+                    const rotHeight = rotate.interpolate(r => item.height * (1 - r) + item.width * r);
+                    return <animated.div
                         className='positioned item shadow'
-                        src={item.src}
-                        alt='player image'
                         style={{
                             opacity,
-                            left,
-                            top,
-                            width: item.width,
-                            height: item.height,
-                        }} />;
+                            left: rotLeft,
+                            top: rotTop,
+                            width: rotWidth,
+                            height: rotHeight,
+                            transformOrigin: 'center center',
+                            transform: rotate.interpolate(r => `rotate(${r * 90}deg)`),
+                        }}
+                    >
+                        <animated.img
+                            className='fill'
+                            src={facedown.interpolate(f => f > 0.5 ? './cards/Card Back.jpg' : (item.src || ''))}
+                            alt='player image'
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                        {item.src ? <animated.div
+                            className='facedown-badge'
+                            style={{ opacity: facedown }}
+                        >
+                            {'背面'}
+                        </animated.div> : undefined}
+                    </animated.div>;
                 }}
             />
             <AnimatedItems

@@ -1,8 +1,8 @@
 import setup from './setup.js';
 import { drawCard, drawCards, discard } from './helper.js';
 
-// 需要指向目标的卡牌（杀、部分锦囊牌）
-export const TARGETED_CARDS = ['Attack', 'Duel', 'Dismantle', 'Steal', 'Fire Attack', 'Capture', 'Starvation', 'Lightning'];
+// 需要指向目标的卡牌（杀、部分锦囊牌、铁锁连环——打出时横置目标玩家）
+export const TARGETED_CARDS = ['Attack', 'Duel', 'Dismantle', 'Steal', 'Fire Attack', 'Capture', 'Starvation', 'Lightning', 'Chains'];
 
 // 延迟判定锦囊：打出时放入目标玩家的判定区（可重复放）
 export const JUDGMENT_CARDS = ['Capture', 'Starvation', 'Lightning'];
@@ -36,7 +36,7 @@ const ROLE_POOL_5 = ['King', 'Rebel', 'Rebel', 'Loyalist', 'Spy'];
 const KING_HP_BONUS = 30;
 
 // 手牌上限随生命分段动态变化（策划 §1.1）：健康(>50%)→4，受伤(25~50%)→2，重伤(≤25%)→1；主公额外+1
-function handLimitOf(G, playerID) {
+export function handLimitOf(G, playerID) {
     const h = G.healths && G.healths[playerID];
     if (!h || h.max <= 0) {
         return 1;
@@ -109,7 +109,8 @@ function unequip(G, ctx, slot) {
 
 // 打出需要目标的卡牌：记录“谁用【什么】指向了谁”，所有人（含 GM）可见；
 // 只保留最近一条（打出下一张牌后旧连线消失/被替换）。
-// 延迟判定锦囊（乐不思蜀/兵粮寸断/闪电）不弃入弃牌堆，而是放入目标玩家的判定区（可重复放）
+// 延迟判定锦囊（乐不思蜀/兵粮寸断/闪电）不弃入弃牌堆，而是放入目标玩家的判定区（可重复放）；
+// 铁锁连环（Chains）打出时横置目标玩家的头像
 function playTargeted(G, ctx, index, targetPlayerID) {
     if (!G.rolesDealt) return;
     const { hands } = G;
@@ -122,6 +123,11 @@ function playTargeted(G, ctx, index, targetPlayerID) {
         // 放入目标玩家的判定区（数组可重复堆叠），明牌可见
         const jg = G.judgment[targetPlayerID] || (G.judgment[targetPlayerID] = []);
         jg.push(card);
+    } else if (card.type === 'Chains' && targetPlayerID !== undefined) {
+        // 铁锁连环：横置目标玩家头像
+        const tappedMap = G.tapped || (G.tapped = {});
+        tappedMap[targetPlayerID] = !tappedMap[targetPlayerID];
+        discard(G, ctx, card);
     } else {
         discard(G, ctx, card);
     }
@@ -233,6 +239,41 @@ function setImage(G, ctx, imageData) {
     }
 }
 
+// 横置 / 竖回自己的头像（铁锁连环横置目标时由 playTargeted 处理）
+function toggleTapped(G, ctx) {
+    const { playerID } = ctx;
+    const tappedMap = G.tapped || (G.tapped = {});
+    tappedMap[playerID] = !tappedMap[playerID];
+}
+
+// 翻面 / 翻回自己的头像（显示武将牌背面）
+function toggleFaceDown(G, ctx) {
+    const { playerID } = ctx;
+    const facedownMap = G.facedown || (G.facedown = {});
+    facedownMap[playerID] = !facedownMap[playerID];
+}
+
+// 判定：翻开牌堆最上面一张牌并弃掉（所有人可见）
+function judge(G, ctx) {
+    if (!G.rolesDealt) return;
+    const card = drawCard(G, ctx);
+    if (card === undefined) return;
+    discard(G, ctx, card);
+    G.lastJudged = { card, by: ctx.playerID, at: Date.now() };
+}
+
+// 从自己的判定区拿回一张牌（放入手牌）
+function takeJudgment(G, ctx, index) {
+    if (!G.rolesDealt) return;
+    const { playerID } = ctx;
+    const jg = G.judgment && G.judgment[playerID];
+    if (!jg) return;
+    const [card] = jg.splice(index, 1);
+    if (card === undefined) return;
+    G.hands[playerID].push(card);
+    G.targets = [];
+}
+
 // 就位 / 取消就位
 function ready(G, ctx) {
     if (G.rolesDealt) return;
@@ -299,17 +340,18 @@ function gmReset(G, ctx) {
     G.targetSeq = fresh.targetSeq;
     G.equipment = fresh.equipment;
     G.judgment = fresh.judgment;
+    G.tapped = fresh.tapped;
+    G.facedown = fresh.facedown;
+    G.lastJudged = fresh.lastJudged;
     playOrder.forEach(player => drawCards(G, ctx, player, 4));
 }
 
 function endPlay(G, ctx) {
-    const { hands } = G;
     const { currentPlayer, events, playerID } = ctx;
     if (currentPlayer === playerID) {
+        // 总是先进入弃牌阶段：玩家可点击手牌弃牌（不需要指向），
+        // 弃至不超过手牌上限后自动结束回合；不满时也可直接点"结束回合"
         events.setStage('discard');
-        if (hands[playerID].length <= handLimitOf(G, playerID)) {
-            events.endTurn();
-        }
     }
 }
 
@@ -388,6 +430,8 @@ export const SanGuoSha = {
                             playTargeted,
                             equipByCardId,
                             unequip,
+                            takeJudgment,
+                            judge,
                             pickUp,
                             dismantle,
                             steal,
@@ -396,6 +440,8 @@ export const SanGuoSha = {
                             setMaxHealth: { move: setMaxHealth, ignoreStaleStateID: true },
                             setHealth: { move: setHealth, ignoreStaleStateID: true },
                             updateHealth: { move: updateHealth, ignoreStaleStateID: true },
+                            toggleTapped: { move: toggleTapped, ignoreStaleStateID: true },
+                            toggleFaceDown: { move: toggleFaceDown, ignoreStaleStateID: true },
                             ready: { move: ready, ignoreStaleStateID: true },
                             revealKingAndHandTurn,
                             endPlay,

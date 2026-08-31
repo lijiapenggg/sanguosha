@@ -182,6 +182,10 @@ export default function setup(ctx, setupData) {
     const equipment = Object.fromEntries(playOrder.map(player => [player, { weapon: undefined, armor: undefined, defHorse: undefined, offHorse: undefined }]));
     // 判定区：乐不思蜀/兵粮寸断/闪电等延迟锦囊（可重复堆叠，明牌）
     const judgment = Object.fromEntries(playOrder.map(player => [player, []]));
+    // 横置（铁锁连环）与翻面（武将牌背面）状态
+    const tapped = Object.fromEntries(playOrder.map(player => [player, false]));
+    const facedown = Object.fromEntries(playOrder.map(player => [player, false]));
+    const lastJudged = undefined;
     const playerImages = Object.fromEntries(playOrder.map(player => [player, undefined]));
     const ready = Object.fromEntries(playOrder.map(player => [player, false]));
     const roles = {};
@@ -199,6 +203,9 @@ export default function setup(ctx, setupData) {
         healths,
         equipment,
         judgment,
+        tapped,
+        facedown,
+        lastJudged,
         playerImages,
         ready,
         roles,
