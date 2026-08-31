@@ -562,10 +562,11 @@ export default class GameArea extends React.Component {
             return;
         }
         const { G, moves, scaledWidth, scaledHeight } = this.props;
-        const btnWidth = scaledWidth * 0.26;
+        // 按钮放在头像框内左下角（自己视角此处无遮挡；头像下方是手牌区会挡）
+        const btnWidth = scaledWidth * 0.22;
         const btnHeight = scaledHeight * 0.07;
-        const rowTop = playerArea.y + scaledHeight + INFO_DELTA + scaledHeight * 0.2 + 2;
-        const btnLeft = playerArea.x + (scaledWidth - btnWidth * 2 - INFO_DELTA) / 2;
+        const btnLeft = playerArea.x + INFO_DELTA;
+        const rowTop = playerArea.y + scaledHeight * 0.78;
         nodes.push(<button
             key='btn-tapped'
             className='positioned state-btn'
@@ -598,7 +599,7 @@ export default class GameArea extends React.Component {
 
     // 判定区：乐不思蜀/兵粮寸断/闪电等延迟锦囊，可重复堆叠，全桌明牌（含 GM）。
     // 显示在头像框内底部右侧（避开左下角的手牌缩略图），最多叠 3 张，超出显示 +N；
-    // 自己点击判定牌可拿回手牌
+    // 自己点击判定牌：弃入弃牌堆（判定结算后弃掉）
     addJudgmentArea(playerArea, player, isMe, nodes) {
         const { G, moves, scaledWidth, scaledHeight } = this.props;
         const jg = G.judgment && G.judgment[player];
@@ -629,7 +630,7 @@ export default class GameArea extends React.Component {
                         className={classNames('judgment-card', { 'judgment-card-takeable': isMe })}
                         style={{ width: slotW, height: slotH }}
                         onClick={isMe ? (() => moves.takeJudgment(jg.length - shown.length + i)) : undefined}
-                        title={isMe ? '点击拿回手牌' : undefined}
+                        title={isMe ? '点击弃入弃牌堆' : undefined}
                     >
                         <img className='judgment-card-img' src={`./cards/${card.type}.jpg`} alt={card.type} draggable={false} />
                         <div className='judgment-card-name'>{CARD_CN[card.type] || card.type}</div>

@@ -540,22 +540,24 @@ console.log('== 19. 横置/翻面/判定/判定区取回/铁锁连环 ==');
     check('判定：牌进入弃牌堆（弃牌堆 +1）', stJ.G.discard.length === discardBefore + 1, { discard: stJ.G.discard.length, before: discardBefore });
     check('判定：记录最近判定结果（明牌）', stJ.G.lastJudged && stJ.G.lastJudged.card && stJ.G.lastJudged.card.type !== undefined, stJ.G.lastJudged);
 }
-// 19c. 判定区取回（takeJudgment）：判定区有牌时拿回手牌
+// 19c. 判定区结算（takeJudgment）：点击判定牌 → 弃入弃牌堆（而非手牌）
 {
     const c1 = clients[1];
     const c1j = cgm.getState().G.judgment['1'];
     if (c1j && c1j.length > 0) {
+        const discardBefore = cgm.getState().G.discard.length;
         const handBefore = cgm.getState().G.hands['1'].length;
         c1.moves.takeJudgment(0);
         await waitForState(cgm, st => st.G.judgment['1'].length === c1j.length - 1);
         const stT = cgm.getState();
-        check('判定区取回：判定区 -1', stT.G.judgment['1'].length === c1j.length - 1, stT.G.judgment['1']);
-        check('判定区取回：手牌 +1', stT.G.hands['1'].length === handBefore + 1, { before: handBefore, after: stT.G.hands['1'].length });
+        check('判定区结算：判定区 -1', stT.G.judgment['1'].length === c1j.length - 1, stT.G.judgment['1']);
+        check('判定区结算：弃牌堆 +1（弃入弃牌堆）', stT.G.discard.length === discardBefore + 1, { before: discardBefore, after: stT.G.discard.length });
+        check('判定区结算：手牌不变（不进手牌）', stT.G.hands['1'].length === handBefore, { before: handBefore, after: stT.G.hands['1'].length });
     } else {
-        console.log('  跳过：玩家1判定区无牌可拿回');
+        console.log('  跳过：玩家1判定区无牌可结算');
     }
 }
-// 19d. 铁锁连环（Chains）：打出时横置目标玩家头像
+// 19d. 铁锁连环（Chains）不再指向/横置目标：普通打出直接进弃牌堆
 {
     const c0s = clients[0];
     const isChains = c => c.type === 'Chains';
@@ -569,10 +571,16 @@ console.log('== 19. 横置/翻面/判定/判定区取回/铁锁连环 ==');
         guard++;
     }
     if (chIdx !== -1) {
-        const targetTappedBefore = cgm.getState().G.tapped['2'] === true;
-        c0s.moves.playTargeted(chIdx, '2');
-        await waitForState(cgm, st => st.G.tapped['2'] === !targetTappedBefore);
-        check('铁锁连环：目标玩家头像横置', cgm.getState().G.tapped['2'] === !targetTappedBefore, cgm.getState().G.tapped);
+        const tappedBefore = cgm.getState().G.tapped['2'] === true;
+        const discardBefore = cgm.getState().G.discard.length;
+        const handBefore = c0s.getState().G.hands['0'].length;
+        c0s.moves.play(chIdx);
+        await waitForState(c0s, st => st.G.hands['0'].length === handBefore - 1);
+        // 等 GM 客户端也同步到最新（避免读到过期弃牌堆）
+        await waitForState(cgm, st => st.G.hands['0'].length === handBefore - 1);
+        const stCh = cgm.getState();
+        check('铁锁连环：普通打出进弃牌堆', stCh.G.discard.length === discardBefore + 1, { before: discardBefore, after: stCh.G.discard.length });
+        check('铁锁连环：不再横置目标玩家（无指向）', (stCh.G.tapped['2'] === true) === tappedBefore, stCh.G.tapped);
     } else {
         console.log('  跳过：手牌无铁锁连环');
     }

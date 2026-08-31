@@ -1,8 +1,8 @@
 import setup from './setup.js';
 import { drawCard, drawCards, discard } from './helper.js';
 
-// 需要指向目标的卡牌（杀、部分锦囊牌、铁锁连环——打出时横置目标玩家）
-export const TARGETED_CARDS = ['Attack', 'Duel', 'Dismantle', 'Steal', 'Fire Attack', 'Capture', 'Starvation', 'Lightning', 'Chains'];
+// 需要指向目标的卡牌（杀、部分锦囊牌；铁锁连环已取消指向，直接弃掉）
+export const TARGETED_CARDS = ['Attack', 'Duel', 'Dismantle', 'Steal', 'Fire Attack', 'Capture', 'Starvation', 'Lightning'];
 
 // 延迟判定锦囊：打出时放入目标玩家的判定区（可重复放）
 export const JUDGMENT_CARDS = ['Capture', 'Starvation', 'Lightning'];
@@ -109,8 +109,7 @@ function unequip(G, ctx, slot) {
 
 // 打出需要目标的卡牌：记录“谁用【什么】指向了谁”，所有人（含 GM）可见；
 // 只保留最近一条（打出下一张牌后旧连线消失/被替换）。
-// 延迟判定锦囊（乐不思蜀/兵粮寸断/闪电）不弃入弃牌堆，而是放入目标玩家的判定区（可重复放）；
-// 铁锁连环（Chains）打出时横置目标玩家的头像
+// 延迟判定锦囊（乐不思蜀/兵粮寸断/闪电）不弃入弃牌堆，而是放入目标玩家的判定区（可重复放）
 function playTargeted(G, ctx, index, targetPlayerID) {
     if (!G.rolesDealt) return;
     const { hands } = G;
@@ -123,11 +122,6 @@ function playTargeted(G, ctx, index, targetPlayerID) {
         // 放入目标玩家的判定区（数组可重复堆叠），明牌可见
         const jg = G.judgment[targetPlayerID] || (G.judgment[targetPlayerID] = []);
         jg.push(card);
-    } else if (card.type === 'Chains' && targetPlayerID !== undefined) {
-        // 铁锁连环：横置目标玩家头像
-        const tappedMap = G.tapped || (G.tapped = {});
-        tappedMap[targetPlayerID] = !tappedMap[targetPlayerID];
-        discard(G, ctx, card);
     } else {
         discard(G, ctx, card);
     }
@@ -262,7 +256,7 @@ function judge(G, ctx) {
     G.lastJudged = { card, by: ctx.playerID, at: Date.now() };
 }
 
-// 从自己的判定区拿回一张牌（放入手牌）
+// 从自己的判定区拿下一张牌：弃入弃牌堆（点击判定牌 = 判定结算后弃掉）
 function takeJudgment(G, ctx, index) {
     if (!G.rolesDealt) return;
     const { playerID } = ctx;
@@ -270,7 +264,7 @@ function takeJudgment(G, ctx, index) {
     if (!jg) return;
     const [card] = jg.splice(index, 1);
     if (card === undefined) return;
-    G.hands[playerID].push(card);
+    discard(G, ctx, card);
     G.targets = [];
 }
 
