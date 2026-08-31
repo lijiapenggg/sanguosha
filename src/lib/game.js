@@ -4,6 +4,9 @@ import { drawCard, drawCards, discard } from './helper.js';
 // 需要指向目标的卡牌（杀、部分锦囊牌）
 export const TARGETED_CARDS = ['Attack', 'Duel', 'Dismantle', 'Steal', 'Fire Attack', 'Capture', 'Starvation', 'Lightning'];
 
+// 延迟判定锦囊：打出时放入目标玩家的判定区（可重复放）
+export const JUDGMENT_CARDS = ['Capture', 'Starvation', 'Lightning'];
+
 // 装备牌分类（三国杀标准）
 export const WEAPON_TYPES = ['Crossbow', 'Fire Fan', 'Axe', 'Longbow', 'Green Dragon Blade', 'Serpent Spear', 'Ice Sword', 'Ancient Scimitar', 'Gender Swords', 'Black Pommel', 'Sky Scorcher'];
 export const ARMOR_TYPES = ['Eight Trigrams', 'Silver Helmet', 'Black Shield', 'Wood Armor'];
@@ -105,7 +108,8 @@ function unequip(G, ctx, slot) {
 }
 
 // 打出需要目标的卡牌：记录“谁用【什么】指向了谁”，所有人（含 GM）可见；
-// 只保留最近一条（打出下一张牌后旧连线消失/被替换）
+// 只保留最近一条（打出下一张牌后旧连线消失/被替换）。
+// 延迟判定锦囊（乐不思蜀/兵粮寸断/闪电）不弃入弃牌堆，而是放入目标玩家的判定区（可重复放）
 function playTargeted(G, ctx, index, targetPlayerID) {
     if (!G.rolesDealt) return;
     const { hands } = G;
@@ -114,7 +118,13 @@ function playTargeted(G, ctx, index, targetPlayerID) {
     if (card === undefined) {
         return;
     }
-    discard(G, ctx, card);
+    if (JUDGMENT_CARDS.includes(card.type) && targetPlayerID !== undefined) {
+        // 放入目标玩家的判定区（数组可重复堆叠），明牌可见
+        const jg = G.judgment[targetPlayerID] || (G.judgment[targetPlayerID] = []);
+        jg.push(card);
+    } else {
+        discard(G, ctx, card);
+    }
     if (TARGETED_CARDS.includes(card.type) && targetPlayerID !== undefined) {
         G.targets = [{
             id: G.targetSeq || 0,
@@ -288,6 +298,7 @@ function gmReset(G, ctx) {
     G.targets = fresh.targets;
     G.targetSeq = fresh.targetSeq;
     G.equipment = fresh.equipment;
+    G.judgment = fresh.judgment;
     playOrder.forEach(player => drawCards(G, ctx, player, 4));
 }
 

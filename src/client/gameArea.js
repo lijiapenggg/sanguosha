@@ -99,6 +99,7 @@ export default class GameArea extends React.Component {
             this.addPlayerImage(playerArea, player, isMe, characterCards);
             this.addHealth(playerArea, player, isMe, nodes);
             this.addEquipment(playerArea, player, isMe, nodes);
+            this.addJudgmentArea(playerArea, player, nodes);
             this.addRoleBadge(playerArea, player, isMe, nodes);
             if (player === currentPlayer) {
                 // 当前回合玩家：金色框框高亮（所有人可见，含 GM）
@@ -545,6 +546,46 @@ export default class GameArea extends React.Component {
         }
     };
 
+    // 判定区：乐不思蜀/兵粮寸断/闪电等延迟锦囊，可重复堆叠，全桌明牌（含 GM）。
+    // 显示在头像框内底部右侧（避开左下角的手牌缩略图），最多叠 3 张，超出显示 +N
+    addJudgmentArea(playerArea, player, nodes) {
+        const { G, scaledWidth, scaledHeight } = this.props;
+        const jg = G.judgment && G.judgment[player];
+        if (!jg) {
+            return;
+        }
+        const slotW = scaledWidth * 0.2;
+        const slotH = scaledHeight * 0.17;
+        const maxShown = 3;
+        const left = playerArea.x + scaledWidth * 0.38;
+        const top = playerArea.y + scaledHeight * 0.72;
+        const shown = jg.slice(-maxShown);
+        nodes.push(<div
+            key={`jg-${player}`}
+            className='positioned judgment-container'
+            style={{
+                left,
+                top,
+                width: slotW * maxShown,
+                height: slotH,
+            }}
+        >
+            {shown.length === 0
+                ? <div className='judgment-empty'>{'判定区'}</div>
+                : shown.map(card => (
+                    <div
+                        key={`jgc-${card.id}`}
+                        className='judgment-card'
+                        style={{ width: slotW, height: slotH }}
+                    >
+                        <img className='judgment-card-img' src={`./cards/${card.type}.jpg`} alt={card.type} draggable={false} />
+                        <div className='judgment-card-name'>{CARD_CN[card.type] || card.type}</div>
+                    </div>
+                ))}
+            {jg.length > maxShown && <div className='judgment-more'>{`+${jg.length - maxShown}`}</div>}
+        </div>);
+    }
+
     // 身份牌：只有本人与 GM 可见；主公展示后对所有人可见
     addRoleBadge(playerArea, player, isMe, nodes) {
         const { G, playerID, scaledWidth, scaledHeight } = this.props;
@@ -693,10 +734,19 @@ export default class GameArea extends React.Component {
     }
 
     addDeck(normalCards) {
-        const { G, moves, height, scaledHeight } = this.props;
+        const { G, moves, width, height, scaledWidth, scaledHeight } = this.props;
         const { mode } = this.state;
         const { deck, rolesDealt } = G;
         const MAX_CARDS_SHOWN = 10;
+        // 牌堆放到桌子中心（弃牌堆左侧），所有玩家都能点牌堆摸牌
+        const deckScale = DECK_RATIO;
+        const deckW = scaledWidth * deckScale;
+        const deckH = scaledHeight * deckScale;
+        // 弃牌堆固定宽度居中，牌堆紧贴其左侧
+        const discardFixedW = 4 * scaledWidth * MIDDLE_CARD_RATIO + 3 * DELTA;
+        const discardStartX = (width - discardFixedW) / 2;
+        const deckLeft = discardStartX - deckW - DELTA;
+        const deckTop = (height - deckH) / 2;
         deck.slice(-MAX_CARDS_SHOWN).forEach((card, i) => {
             let onClick = undefined;
             if (mode === SetModePanel.DEFAULT_MODE && rolesDealt && card === deck[deck.length - 1]) {
@@ -706,9 +756,9 @@ export default class GameArea extends React.Component {
                 key: `card-${card.id}`,
                 card,
                 opacity: 1,
-                left: DELTA * (1 - i / MAX_CARDS_SHOWN),
-                top: height - scaledHeight * DECK_RATIO - DELTA * (i / MAX_CARDS_SHOWN),
-                scale: DECK_RATIO,
+                left: deckLeft + DELTA * (1 - i / MAX_CARDS_SHOWN),
+                top: deckTop - DELTA * (i / MAX_CARDS_SHOWN),
+                scale: deckScale,
                 onClick,
             });
         });
@@ -719,7 +769,10 @@ export default class GameArea extends React.Component {
         const { hands } = G;
         const myHand = hands[playerID];
         if (myHand) {
-            const spacing = Math.min(scaledWidth + DELTA, (width - (2 + DECK_RATIO) * scaledWidth - 5 * DELTA) / (myHand.length - 1));
+            // 手牌在底部居中排列（牌堆已移到桌子中心）
+            const spacing = Math.min(scaledWidth + DELTA, (width - scaledWidth - 2 * DELTA) / Math.max(1, myHand.length - 1));
+            const totalW = spacing * Math.max(0, myHand.length - 1) + scaledWidth;
+            const startX = Math.max(DELTA, (width - totalW) / 2);
             myHand.forEach((card, i) => {
                 const onClick = this.selectFunction(i);
                 const dragProps = this.handDragProps(card);
@@ -728,7 +781,7 @@ export default class GameArea extends React.Component {
                     card,
                     faceUp: true,
                     opacity: onClick !== undefined ? 1 : 0.3,
-                    left: DECK_RATIO * scaledWidth + 2 * DELTA + spacing * i,
+                    left: startX + spacing * i,
                     top: height - scaledHeight - DELTA,
                     scale: 1,
                     onClick,
@@ -743,8 +796,9 @@ export default class GameArea extends React.Component {
         const { mode } = this.state;
         const { discard, rolesDealt } = G;
         const MAX_DISCARDS_SHOWN = 4;
-        const numCardsShown = Math.min(discard.length, MAX_DISCARDS_SHOWN);
-        const startX = (width - numCardsShown * scaledWidth * MIDDLE_CARD_RATIO - (numCardsShown - 1) * DELTA) / 2;
+        // 固定按最多显示张数的宽度居中，保证与中心牌堆不重叠、布局稳定
+        const fixedW = MAX_DISCARDS_SHOWN * scaledWidth * MIDDLE_CARD_RATIO + (MAX_DISCARDS_SHOWN - 1) * DELTA;
+        const startX = (width - fixedW) / 2;
         for (let i = 0; i < discard.length && i <= MAX_DISCARDS_SHOWN; i++) {
             const card = discard[discard.length - 1 - i];
             let onClick = undefined;

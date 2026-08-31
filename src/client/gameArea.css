@@ -297,6 +297,84 @@ img {
     pointer-events: none;
 }
 
+/* 判定区：乐不思蜀/兵粮寸断/闪电等延迟锦囊，可重复堆叠，全桌明牌 */
+.judgment-container {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    background-color: rgba(0, 0, 0, 0.5);
+    border: 1px dashed #a06bd8;
+    border-radius: 4px;
+    box-sizing: border-box;
+    overflow: hidden;
+    z-index: 20;
+    padding: 2px;
+}
+
+.judgment-empty {
+    width: 100%;
+    height: 100%;
+    color: #b99ad8;
+    font-size: 12px;
+    text-align: center;
+    line-height: 1.2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    pointer-events: none;
+}
+
+.judgment-card {
+    position: relative;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(30, 30, 30, 0.8);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.judgment-card-img {
+    max-width: 85%;
+    max-height: 85%;
+    object-fit: contain;
+    user-select: none;
+    pointer-events: none;
+}
+
+.judgment-card-name {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background-color: rgba(0, 0, 0, 0.75);
+    color: #d8a8ff;
+    font-size: 9px;
+    text-align: center;
+    line-height: 1.2;
+    padding: 1px 0;
+    box-sizing: border-box;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+
+.judgment-more {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    background-color: rgba(0, 0, 0, 0.8);
+    color: #d8a8ff;
+    font-size: 11px;
+    font-weight: bold;
+    border-radius: 3px;
+    padding: 0 3px;
+    pointer-events: none;
+}
+
 /* 生命分段（策划 §1.1）：>50% 健康 / 25~50% 受伤 / ≤25% 重伤 */
 .hp-label.health-ok {
     background-color: rgba(0, 120, 0, 0.75);

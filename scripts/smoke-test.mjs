@@ -5,7 +5,7 @@
  */
 import { LobbyClient, Client } from 'boardgame.io/dist/cjs/client.js';
 import { SocketIO } from 'boardgame.io/dist/cjs/multiplayer.js';
-import { SanGuoSha, TARGETED_CARDS, WEAPON_TYPES, ARMOR_TYPES, OFFENSIVE_HORSE_TYPES, DEFENSIVE_HORSE_TYPES, equipSlotOf } from '../src/lib/game.js';
+import { SanGuoSha, TARGETED_CARDS, WEAPON_TYPES, ARMOR_TYPES, OFFENSIVE_HORSE_TYPES, DEFENSIVE_HORSE_TYPES, equipSlotOf, JUDGMENT_CARDS } from '../src/lib/game.js';
 
 const SERVER = 'http://localhost:8098';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -377,11 +377,12 @@ console.log('== 17. 装备栏：装备牌进装备栏而非弃牌堆，可卸下
     }
     check('玩家0手牌中找到了装备牌', equipIdx !== -1, guard);
     if (equipIdx !== -1) {
-        const stBefore = cgm.getState();
-        const card = stBefore.G.hands['0'][equipIdx];
+        // 索引与读卡都基于玩家0本地状态（自洽）；断言前再等 GM 同步到一致状态
+        const card = c0s.getState().G.hands['0'][equipIdx];
         const slot = equipSlotOf(card.type);
-        const handBefore = stBefore.G.hands['0'].length;
-        const discardBefore = stBefore.G.discard.length;
+        const handBefore = c0s.getState().G.hands['0'].length;
+        await waitForState(cgm, st => st.G.hands['0'].length === handBefore);
+        const discardBefore = cgm.getState().G.discard.length;
         // 打出装备牌 → 应进装备栏而非弃牌堆
         c0s.moves.play(equipIdx);
         await waitForState(cgm, st => st.G.equipment && st.G.equipment['0'][slot] !== undefined);
@@ -437,6 +438,58 @@ console.log('== 17. 装备栏：装备牌进装备栏而非弃牌堆，可卸下
             }
         } else {
             console.log('  跳过：手牌无第二张装备牌');
+        }
+    }
+}
+
+console.log('== 18. 判定区：乐不思蜀/兵粮寸断/闪电入目标玩家判定区（可重复，明牌） ==');
+{
+    const c0s = clients[0];
+    const isJudgment = c => JUDGMENT_CARDS.includes(c.type);
+    let jIdx = c0s.getState().G.hands['0'].findIndex(isJudgment);
+    let guard = 0;
+    while (jIdx === -1 && guard < 60) {
+        const before = c0s.getState().G.hands['0'].length;
+        c0s.moves.draw();
+        await waitForState(c0s, st => st.G.hands['0'].length === before + 1);
+        jIdx = c0s.getState().G.hands['0'].findIndex(isJudgment);
+        guard++;
+    }
+    check('玩家0手牌中找到了判定锦囊', jIdx !== -1, guard);
+    if (jIdx !== -1) {
+        const card = c0s.getState().G.hands['0'][jIdx];
+        const discardBefore = cgm.getState().G.discard.length;
+        const handBefore18 = c0s.getState().G.hands['0'].length;
+        // 打给玩家1：判定牌应进入玩家1判定区，而非弃牌堆
+        c0s.moves.playTargeted(jIdx, '1');
+        await waitForState(cgm, st => st.G.judgment && st.G.judgment['1'].length === 1);
+        // 等玩家0本地也同步（手牌 -1），后续查找才不会拿到已打出的旧牌
+        await waitForState(c0s, st => st.G.hands['0'].length === handBefore18 - 1);
+        const stJ1 = cgm.getState();
+        check('判定牌进入目标玩家判定区', stJ1.G.judgment['1'].length === 1 && stJ1.G.judgment['1'][0].id === card.id, stJ1.G.judgment['1']);
+        check('判定牌未进弃牌堆', stJ1.G.discard.length === discardBefore, { before: discardBefore, after: stJ1.G.discard.length });
+        check('GM 能看到判定区（明牌）', stJ1.G.judgment['1'].length === 1, stJ1.G.judgment['1']);
+        // 目标玩家也能看到（明牌）
+        await waitForState(clients[1], st => st.G.judgment && st.G.judgment['1'].length === 1);
+        check('目标玩家能看到自己判定区（明牌）', clients[1].getState().G.judgment['1'].length === 1, clients[1].getState().G.judgment['1']);
+        // 再放一张 → 可重复堆叠
+        jIdx = c0s.getState().G.hands['0'].findIndex(isJudgment);
+        guard = 0;
+        while (jIdx === -1 && guard < 60) {
+            const before = c0s.getState().G.hands['0'].length;
+            c0s.moves.draw();
+            await waitForState(c0s, st => st.G.hands['0'].length === before + 1);
+            jIdx = c0s.getState().G.hands['0'].findIndex(isJudgment);
+            guard++;
+        }
+        if (jIdx !== -1) {
+            const card2 = c0s.getState().G.hands['0'][jIdx];
+            c0s.moves.playTargeted(jIdx, '1');
+            await waitForState(cgm, st => st.G.judgment['1'].length === 2);
+            const stJ2 = cgm.getState();
+            check('判定区可重复堆叠（现有 2 张）', stJ2.G.judgment['1'].length === 2 && stJ2.G.judgment['1'][1].id === card2.id, stJ2.G.judgment['1'].map(c => c.type));
+        } else {
+            console.log('  跳过：手牌无第二张判定锦囊');
         }
     }
 }

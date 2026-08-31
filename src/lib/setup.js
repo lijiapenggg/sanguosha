@@ -180,6 +180,8 @@ export default function setup(ctx, setupData) {
     const healths = Object.fromEntries(playOrder.map(player => [player, { max: 3, current: 3 }]));
     // 装备栏：武器 / 护甲 / 防御马(+1) / 进攻马(-1)，槽内为卡牌对象或 undefined
     const equipment = Object.fromEntries(playOrder.map(player => [player, { weapon: undefined, armor: undefined, defHorse: undefined, offHorse: undefined }]));
+    // 判定区：乐不思蜀/兵粮寸断/闪电等延迟锦囊（可重复堆叠，明牌）
+    const judgment = Object.fromEntries(playOrder.map(player => [player, []]));
     const playerImages = Object.fromEntries(playOrder.map(player => [player, undefined]));
     const ready = Object.fromEntries(playOrder.map(player => [player, false]));
     const roles = {};
@@ -196,6 +198,7 @@ export default function setup(ctx, setupData) {
         hands,
         healths,
         equipment,
+        judgment,
         playerImages,
         ready,
         roles,
