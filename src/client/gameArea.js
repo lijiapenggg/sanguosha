@@ -1045,39 +1045,67 @@ export default class GameArea extends React.Component {
         reader.onload = ev => {
             const image = new Image();
             image.onload = async () => {
-                const scale = Math.min(1, IMAGE_MAX_SIZE / Math.max(image.width, image.height));
-                const canvas = document.createElement('canvas');
-                canvas.width = Math.max(1, Math.round(image.width * scale));
-                canvas.height = Math.max(1, Math.round(image.height * scale));
-                canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
-                canvas.toBlob(async blob => {
-                    try {
-                        // 上传到服务器文件，状态里只存 URL（避免 base64 大图随每次广播重发）
-                        const form = new FormData();
-                        form.append('image', blob, 'avatar.jpg');
-                        form.append('matchID', this.props.matchID || '');
-                        form.append('playerID', this.props.playerID || '');
-                        const res = await fetch('/api/upload', { method: 'POST', body: form });
-                        const data = await res.json();
-                        if (res.ok && data.url) {
-                            this.props.moves.setImage(data.url);
-                        } else {
-                            throw new Error(data.error || '上传失败');
-                        }
-                    } catch (err) {
-                        // 上传失败：回退为 base64 直存（图片仍能显示，只是占用更多带宽），并提示用户
-                        try {
-                            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-                            this.props.moves.setImage(dataUrl);
-                            window.alert('图片上传服务器失败，已改用本地图片（可能影响其他玩家加载速度）');
-                        } catch (e2) {
-                            window.alert('图片上传失败：' + (err && err.message ? err.message : '未知错误'));
-                        }
-                    }
+                let dataUrl;
+                try {
+                    const scale = Math.min(1, IMAGE_MAX_SIZE / Math.max(image.width, image.height));
+                    const canvas = document.createElement('canvas');
+                    canvas.width = Math.max(1, Math.round(image.width * scale));
+                    canvas.height = Math.max(1, Math.round(image.height * scale));
+                    canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+                    // 用 toDataURL（兼容性最好，手机/旧浏览器都支持），再转 Blob 上传
+                    dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                } catch (err) {
+                    window.alert('图片处理失败：' + (err && err.message ? err.message : '未知错误'));
                     this.setState({ uploadTarget: undefined });
-                }, 'image/jpeg', 0.85);
+                    return;
+                }
+                let blob;
+                try {
+                    // dataURL → Blob（避免依赖 canvas.toBlob，部分浏览器不支持）
+                    const [head, body] = dataUrl.split(',');
+                    const mime = head.match(/:(.*?);/)[1];
+                    const bin = atob(body);
+                    const u8 = new Uint8Array(bin.length);
+                    for (let i = 0; i < bin.length; i++) {
+                        u8[i] = bin.charCodeAt(i);
+                    }
+                    blob = new Blob([u8], { type: mime });
+                } catch (err) {
+                    blob = undefined;
+                }
+                try {
+                    // 上传到服务器文件，状态里只存 URL（避免 base64 大图随每次广播重发）
+                    const form = new FormData();
+                    form.append('image', blob, 'avatar.jpg');
+                    form.append('matchID', this.props.matchID || '');
+                    form.append('playerID', this.props.playerID || '');
+                    const res = await fetch('/api/upload', { method: 'POST', body: form });
+                    const data = await res.json();
+                    if (res.ok && data.url) {
+                        this.props.moves.setImage(data.url);
+                    } else {
+                        throw new Error(data.error || '上传失败');
+                    }
+                } catch (err) {
+                    // 上传失败：回退为 base64 直存（图片仍能显示，只是占用更多带宽），并提示用户
+                    try {
+                        this.props.moves.setImage(dataUrl);
+                        window.alert('图片上传服务器失败，已改用本地图片（可能影响其他玩家加载速度）');
+                    } catch (e2) {
+                        window.alert('图片上传失败：' + (err && err.message ? err.message : '未知错误'));
+                    }
+                }
+                this.setState({ uploadTarget: undefined });
+            };
+            image.onerror = () => {
+                window.alert('无法读取该图片文件');
+                this.setState({ uploadTarget: undefined });
             };
             image.src = ev.target.result;
+        };
+        reader.onerror = () => {
+            window.alert('无法读取该图片文件');
+            this.setState({ uploadTarget: undefined });
         };
         reader.readAsDataURL(file);
     }
